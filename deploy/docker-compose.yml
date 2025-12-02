@@ -1,0 +1,32 @@
+services:
+  tgbot:
+    image: ghcr.io/akulalu07/itam_hackaton-tgbot:latest
+    container_name: tgbot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RUST_LOG: info
+
+  backend:
+    image: ghcr.io/akulalu07/itam_hackaton-backend:latest
+    container_name: backend
+    ports:
+      - '8080:8080'
+    restart: unless-stopped
+    env_file:
+      - .env
+
+  redis:
+    image: redis:8.4.0
+    container_name: redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --requirepass Somepassword
+    networks:
+      - default
+
+volumes:
+  redis_data:
