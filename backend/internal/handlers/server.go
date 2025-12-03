@@ -29,7 +29,7 @@ func Start_server() {
 
 func connectToRedis() {
 	var err error
-	redisConn, err = redis.Dial("tcp", "localhost:6379",
+	redisConn, err = redis.Dial("tcp", "0.0.0.0:6379",
 		redis.DialUsername(REDISUSER),
 		redis.DialPassword(REDISPASS),
 	)
