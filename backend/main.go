@@ -1,6 +1,9 @@
 package main
 
-import "backend/internal/handlers"
+import (
+	_ "backend/docs"
+	"backend/internal/handlers"
+)
 
 func main() {
 	handlers.Start_server()

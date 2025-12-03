@@ -25,7 +25,9 @@ func Start_server() {
 
 	connectToRedis()
 	defer redisConn.Close()
-	r.Run("0.0.0.0:8080")
+	if err := r.Run("0.0.0.0:8080"); err != nil {
+		panic(err)
+	}
 }
 
 func connectToRedis() {
@@ -40,6 +42,10 @@ func connectToRedis() {
 	}
 
 }
+
+// Load from env don't work. I don't know why
+
+// FIXME Try to fix it
 
 func LoadEnv() {
 	REDISUSER = getFromEnv("REDIS_USER", "admin")
