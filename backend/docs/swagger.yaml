@@ -1,0 +1,53 @@
+definitions:
+  types.Token:
+    properties:
+      token:
+        type: string
+    required:
+    - token
+    type: object
+info:
+  contact: {}
+paths:
+  /admin/api/login:
+    post:
+      produces:
+      - application/json
+      responses:
+        "418":
+          description: I'm a teapot
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Admin login
+      tags:
+      - admin
+  /api/token:
+    post:
+      consumes:
+      - application/json
+      description: Validate tg token and return login result
+      parameters:
+      - description: Token
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/types.Token'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Takes Telegram token
+      tags:
+      - auth
+swagger: "2.0"

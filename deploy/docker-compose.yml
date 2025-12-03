@@ -24,7 +24,14 @@ services:
       - '6379:6379'
     volumes:
       - redis_data:/data
-    command: redis-server --requirepass Somepassword
+    env_file:
+      - .env   
+    command:
+      - "redis-server"
+      - "--user"
+      - "${REDIS_USERNAME} on >${REDIS_PASSWORD} ~* +@all"
+      - "--user"
+      - "default off"
     networks:
       - default
 
