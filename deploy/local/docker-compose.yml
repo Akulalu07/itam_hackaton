@@ -3,11 +3,11 @@ services:
     image: redis:8.4.0
     container_name: redis
     ports:
-      - '6379:6379'
+      - "6379:6379"
     volumes:
       - redis_data:/data
     env_file:
-      - \.env   
+      - .env
     command:
       - "redis-server"
       - "--user"
@@ -22,29 +22,32 @@ services:
     networks:
       - default
 
-  tgbot:
-    image: ghcr.io/akulalu07/itam_hackaton-tgbot:latest
-    container_name: tgbot
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
     restart: unless-stopped
+    depends_on:
+      - redis
+ 
+
+  tgbot:
+    build:
+      context: ../../tgbot
+      dockerfile: Dockerfile
+    container_name: tgbot
     env_file:
       - .env
     environment:
-      RUST_LOG: info
-    depends_on:
-      - redis
-
-  backend:
-    image: ghcr.io/akulalu07/itam_hackaton-backend:latest
-    container_name: backend
-    ports:
-      - '8080:8080'
+      TELOXIDE_TOKEN: ${TELOXIDE_TOKEN}
     restart: unless-stopped
-    env_file:
-      - .env
     depends_on:
-      - redis
-
-  
+      - redis 
 
 volumes:
   redis_data:
