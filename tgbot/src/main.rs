@@ -25,6 +25,5 @@ fn random_string() -> String {
         .map(char::from)
         .collect();
     //TODO: Try to search token in redis and send to redis
-
     token
 }

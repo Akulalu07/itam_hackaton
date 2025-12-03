@@ -2,12 +2,10 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gomodule/redigo/redis"
-	"github.com/joho/godotenv"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -42,14 +40,9 @@ func connectToRedis() {
 }
 
 func LoadEnv() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	REDISUSER = getFromEnv("REDIS_USER", "admin")
 
-	REDISUSER = getFromEnv("REDISUSER", "admin")
-
-	REDISPASS = getFromEnv("REDISPASS", "some_pass")
+	REDISPASS = getFromEnv("REDIS_PASS", "some_pass")
 }
 
 func getFromEnv(variadle string, defaultVariable string) string {

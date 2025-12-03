@@ -1,7 +1,7 @@
 */Cargo.lock
 tgbot/target
 
-deploy/.env
+*/.env
 
 backend/go.sum
 backend/go.mod
