@@ -12,6 +12,7 @@ import (
 
 var REDISUSER string
 var REDISPASS string
+var REDISADDR string
 var redisConn redis.Conn
 
 func Start_server() {
@@ -29,7 +30,8 @@ func Start_server() {
 
 func connectToRedis() {
 	var err error
-	redisConn, err = redis.Dial("tcp", "0.0.0.0:6379",
+	redisConn, err = redis.Dial("tcp",
+		REDISADDR,
 		redis.DialUsername(REDISUSER),
 		redis.DialPassword(REDISPASS),
 	)
@@ -43,6 +45,8 @@ func LoadEnv() {
 	REDISUSER = getFromEnv("REDIS_USER", "admin")
 
 	REDISPASS = getFromEnv("REDIS_PASS", "some_pass")
+
+	REDISADDR = getFromEnv("REDIS_ADDR", "redis:6379")
 }
 
 func getFromEnv(variadle string, defaultVariable string) string {
