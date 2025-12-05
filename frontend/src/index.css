@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Prevent pull-to-refresh on mobile */
+  body {
+    overscroll-behavior-y: contain;
+  }
+}
+
+/* Custom components */
+@layer components {
+  /* Card hover effects */
+  .card-hover {
+    @apply transition-all duration-200 ease-out;
+  }
+  
+  .card-hover:hover {
+    @apply -translate-y-1 shadow-lg;
+  }
+
+  /* Swipe card styles */
+  .swipe-card {
+    @apply absolute w-full h-full rounded-2xl shadow-xl overflow-hidden;
+    touch-action: none;
+    user-select: none;
+  }
+
+  /* Glass effect */
+  .glass-effect {
+    @apply bg-base-200/80 backdrop-blur-md;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+  }
+
+  /* Bottom navigation active indicator */
+  .btm-nav > .active::before {
+    content: '';
+    @apply absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-primary rounded-b-full;
+  }
+}
+
+/* Custom utilities */
+@layer utilities {
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Safe area padding for notched devices */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Touch manipulation for better mobile experience */
+  .touch-pan-y {
+    touch-action: pan-y;
+  }
+}
+
+/* PWA specific styles */
+@media (display-mode: standalone) {
+  /* Styles for installed PWA */
+  .pwa-installed {
+    /* Can add specific styles for PWA mode */
+  }
+}
+
+/* Animations */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.animate-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+/* Swipe feedback animations */
+@keyframes like-pulse {
+  0% { transform: scale(1); opacity: 0; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+@keyframes nope-pulse {
+  0% { transform: scale(1); opacity: 0; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
