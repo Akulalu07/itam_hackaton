@@ -1,37 +1,19 @@
-FROM rust:1.91.1-slim AS builder
+FROM rust:1.91-slim AS builder
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates pkg-config libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN apt update && apt install -y ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 
 COPY Cargo.toml Cargo.lock ./
 
-
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release || true
-
 COPY . .
+
 RUN cargo build --release
+ENTRYPOINT [ "cargo", "run", "--release"]
 
-FROM debian:bookworm-slim AS runtime
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    openssl \
-     curl\
-    tzdata \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-RUN useradd -m appuser
-USER appuser
-
-COPY --from=builder /app/target/release/tgbot /usr/local/bin/tgbot
-
-ENV RUST_LOG=info
-
-CMD ["tgbot"]
