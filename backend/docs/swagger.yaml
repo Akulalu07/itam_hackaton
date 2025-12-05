@@ -9,6 +9,26 @@ definitions:
     - password
     - username
     type: object
+  types.NotificationRequest:
+    properties:
+      data:
+        additionalProperties: true
+        type: object
+      message:
+        type: string
+      type:
+        type: string
+    type: object
+  types.RegisterUserRequest:
+    properties:
+      telegramUserId:
+        type: integer
+      username:
+        type: string
+    required:
+    - telegramUserId
+    - username
+    type: object
   types.Token:
     properties:
       token:
@@ -51,11 +71,35 @@ paths:
       summary: Admin login
       tags:
       - admin
+  /api/notification:
+    post:
+      consumes:
+      - application/json
+      description: Sends a notification message to all authenticated users via Redis
+        Streams
+      parameters:
+      - description: Notification
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/types.NotificationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Send notification to all users
+      tags:
+      - notifications
   /api/token:
     post:
       consumes:
       - application/json
-      description: Validate tg token and return login result
+      description: Validate tg token, register user if new, and return login result
       parameters:
       - description: Token
         in: body
@@ -63,6 +107,39 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/types.Token'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Returns user info with isNewUser and registered flags
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Takes Telegram token
+      tags:
+      - auth
+  /api/user/register:
+    post:
+      consumes:
+      - application/json
+      description: Registers a Telegram user in the database
+      parameters:
+      - description: User registration data
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/types.RegisterUserRequest'
       produces:
       - application/json
       responses:
@@ -76,7 +153,21 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Takes Telegram token
+      summary: Register a new user
       tags:
-      - auth
+      - users
+  /api/users/authorized:
+    get:
+      description: Returns a list of all authorized Telegram users
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get all authorized users
+      tags:
+      - users
 swagger: "2.0"

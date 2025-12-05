@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"backend/internal/database"
 	"context"
 	"fmt"
 	"os"
@@ -24,13 +25,22 @@ var ctx = context.Background()
 func Start_server() {
 	r := gin.Default()
 	LoadEnv()
-	r.POST("/api/token", takeToken)
-	r.POST("/admin/api/login", adminLogin)
 
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	if err := database.Connect(); err != nil {
+		panic(fmt.Sprintf("Failed to connect to PostgreSQL: %v", err))
+	}
+	defer database.Close()
 
 	connectToRedis()
 	defer redisConn.Close()
+
+	r.POST("/api/token", takeToken)
+	r.POST("/api/user/register", registerUser)
+	r.GET("/api/users/authorized", getAuthorizedUsers)
+	r.POST("/api/notification", sendNotification)
+	r.POST("/admin/api/login", adminLogin)
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	if err := r.Run("0.0.0.0:8080"); err != nil {
 		panic(err)
 	}
