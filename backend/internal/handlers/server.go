@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"backend/internal/database"
+	"backend/internal/middleware"
+	"backend/internal/services"
 	"context"
 	"fmt"
 	"os"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
@@ -24,6 +27,7 @@ var ctx = context.Background()
 
 func Start_server() {
 	r := gin.Default()
+	r.Use(cors.Default())
 	LoadEnv()
 
 	if err := database.Connect(); err != nil {
@@ -34,11 +38,43 @@ func Start_server() {
 	connectToRedis()
 	defer redisConn.Close()
 
-	r.POST("/api/token", takeToken)
-	r.POST("/api/user/register", registerUser)
-	r.GET("/api/users/authorized", getAuthorizedUsers)
+	notificationService := services.NewNotificationService(redisConn)
+	authHandler := NewAuthHandler(notificationService)
+
+	r.POST("/api/token", takeToken) // Legacy endpoint
+	r.POST("/api/auth/telegram", authHandler.AuthenticateTelegram)
+	r.POST("/api/user/register", registerUser)         // Legacy
+	r.GET("/api/users/authorized", getAuthorizedUsers) // Legacy
 	r.POST("/api/notification", sendNotification)
 	r.POST("/admin/api/login", adminLogin)
+
+	api := r.Group("/api")
+	api.Use(middleware.RequireAuth())
+	{
+		api.GET("/users/me", authHandler.GetMe)
+		api.PATCH("/users/me/profile", authHandler.UpdateProfile)
+		api.GET("/users/:id", authHandler.GetUser)
+
+		// TODO: Add other route groups here
+		// - Hackathons
+		// - Teams
+		// - Matching
+		// - Inventory
+		// - Cases
+		// - Analytics
+	}
+
+	// Admin routes
+	admin := r.Group("/api/admin")
+	admin.Use(middleware.RequireAuth())
+	admin.Use(middleware.RequireRole("admin"))
+	{
+		// TODO: POST /api/admin/hackathon-creators
+		// TODO: POST /api/admin/clothes
+		// TODO: POST /api/admin/titles
+		// TODO: POST /api/admin/stickers
+	}
+
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	if err := r.Run("0.0.0.0:8080"); err != nil {

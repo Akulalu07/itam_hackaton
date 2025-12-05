@@ -40,11 +40,10 @@ func takeToken(c *gin.Context) {
 		return
 	}
 
-	ans := split(val)
+	ans := splitTokenData(val)
 	idStr, name, time := ans[0], ans[1], ans[2]
 	fmt.Println("Token time:", time)
 
-	// Convert user_id to int64
 	telegramUserID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{

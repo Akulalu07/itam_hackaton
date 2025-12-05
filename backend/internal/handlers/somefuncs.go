@@ -1,6 +1,6 @@
 package handlers
 
-func split(some string) []string {
+func splitTokenData(some string) []string {
 	id := ""
 	name := ""
 	time := ""
