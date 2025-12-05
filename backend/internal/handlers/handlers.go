@@ -36,10 +36,7 @@ func takeToken(c *gin.Context) {
 		return
 	}
 
-	fmt.Println("Token data:", val)
-
-	// Parse the value: format is "user_id;username;time"
-	// TODO: Parse and use the user data
+	// TODO: Analyze time
 	ans := split(val)
 	id, name, time := ans[0], ans[1], ans[2]
 	fmt.Println(time)
