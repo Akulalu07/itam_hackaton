@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"backend/internal/types"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -28,21 +27,25 @@ func takeToken(c *gin.Context) {
 		return
 	}
 
-	val, err := redisConn.Get(ctx, "key").Result()
+	val, err := redisConn.Get(ctx, req.Token).Result()
 	if err != nil {
-		fmt.Println("Maybe ypu don't get this token")
+		fmt.Println("Maybe you don't get this token")
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+			"error": "Invalid or expired token",
 		})
 		return
 	}
 
-	fmt.Println(val)
+	fmt.Println("Token data:", val)
 
-	//TODO: Connect to redis and get the user
-
+	// Parse the value: format is "user_id;username;time"
+	// TODO: Parse and use the user data
+	ans := split(val)
+	id, name, time := ans[0], ans[1], ans[2]
+	fmt.Println(time)
 	c.JSON(http.StatusOK, gin.H{
-		"status": "ok",
+		"id":   id,
+		"name": name,
 	})
 }
 
@@ -66,16 +69,14 @@ func adminLogin(c *gin.Context) {
 		return
 	}
 
-	fmt.Println(req)
-
 	if req.UserName == ADMINUSER && req.Password == ADMINPASS {
 		c.JSON(http.StatusOK, gin.H{
 			"status": "ok",
 		})
 		return
 	}
-	c.JSON(http.StatusTeapot, gin.H{
-		"error": errors.New("lol you are not admin"),
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"error": "Invalid credentials",
 	})
 
 }

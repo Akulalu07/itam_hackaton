@@ -11,9 +11,9 @@ services:
     command:
       - "redis-server"
       - "--user"
-      - "${REDIS_USERNAME}"
+      - "${REDISUSER}"
       - "on"
-      - ">${REDIS_PASSWORD}"
+      - ">${REDISPASSWORD}"
       - "~*"
       - "+@all"
       - "--user"

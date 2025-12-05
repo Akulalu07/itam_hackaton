@@ -37,7 +37,6 @@ func Start_server() {
 }
 
 func connectToRedis() {
-	var err error
 	redisConn = redis.NewClient(&redis.Options{
 		Addr:     REDISADDR,
 		Username: REDISUSER,
@@ -45,22 +44,17 @@ func connectToRedis() {
 		DB:       0,
 	})
 
+	_, err := redisConn.Ping(ctx).Result()
 	if err != nil {
 		panic(fmt.Sprintf("err with connect to redis; err %s", err))
 	}
-
+	fmt.Println("Successfully connected to Redis")
 }
 
-// Load from env don't work. I don't know why
-
-// FIXME Try to fix it
-
 func LoadEnv() {
-	REDISUSER = getFromEnv("REDIS_USER", "admin")
-
-	REDISPASS = getFromEnv("REDIS_PASS", "some_pass")
-
-	REDISADDR = getFromEnv("REDIS_ADDR", "redis:6379")
+	REDISUSER = getFromEnv("REDISUSER", "admin")
+	REDISPASS = getFromEnv("REDISPASSWORD", "some_pass")
+	REDISADDR = getFromEnv("REDISADDR", "redis:6379")
 	ADMINUSER = getFromEnv("ADMINUSER", "admin")
 	ADMINPASS = getFromEnv("ADMINPASS", "admin")
 }

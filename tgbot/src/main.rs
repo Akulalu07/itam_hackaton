@@ -66,6 +66,8 @@ async fn generate_unique_token(msg: &Message) -> anyhow::Result<String> {
 
             let _: () = redis.set_ex(&token, value, 600).await?;
 
+            println!("token saved: {}", token);
+
             return Ok(token);
         }
     }
@@ -79,9 +81,9 @@ fn random_string() -> String {
 }
 
 async fn create_redis_conn() -> anyhow::Result<redis::aio::MultiplexedConnection> {
-    let addr = env::var("REDIS_ADDR")?;
-    let username = env::var("REDIS_USERNAME").ok();
-    let password = env::var("REDIS_PASSWORD").ok();
+    let addr = env::var("REDISADDR")?;
+    let username = env::var("REDISUSER").ok();
+    let password = env::var("REDISPASSWORD").ok();
 
     let url = match (username, password) {
         (Some(u), Some(p)) => format!("redis://{}:{}@{}", u, p, addr),
