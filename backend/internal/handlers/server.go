@@ -1,11 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gomodule/redigo/redis"
+	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -13,7 +14,12 @@ import (
 var REDISUSER string
 var REDISPASS string
 var REDISADDR string
-var redisConn redis.Conn
+
+var ADMINUSER string
+var ADMINPASS string
+
+var redisConn *redis.Client
+var ctx = context.Background()
 
 func Start_server() {
 	r := gin.Default()
@@ -32,11 +38,13 @@ func Start_server() {
 
 func connectToRedis() {
 	var err error
-	redisConn, err = redis.Dial("tcp",
-		REDISADDR,
-		redis.DialUsername(REDISUSER),
-		redis.DialPassword(REDISPASS),
-	)
+	redisConn = redis.NewClient(&redis.Options{
+		Addr:     REDISADDR,
+		Username: REDISUSER,
+		Password: REDISPASS,
+		DB:       0,
+	})
+
 	if err != nil {
 		panic(fmt.Sprintf("err with connect to redis; err %s", err))
 	}
@@ -53,6 +61,8 @@ func LoadEnv() {
 	REDISPASS = getFromEnv("REDIS_PASS", "some_pass")
 
 	REDISADDR = getFromEnv("REDIS_ADDR", "redis:6379")
+	ADMINUSER = getFromEnv("ADMINUSER", "admin")
+	ADMINPASS = getFromEnv("ADMINPASS", "admin")
 }
 
 func getFromEnv(variadle string, defaultVariable string) string {
@@ -60,6 +70,6 @@ func getFromEnv(variadle string, defaultVariable string) string {
 	if variab == "" {
 		variab = defaultVariable
 	}
-	fmt.Printf("%s:%s", variadle, variab)
+	fmt.Printf("%s:%s\n", variadle, variab)
 	return variab
 }

@@ -1,4 +1,14 @@
 definitions:
+  types.LoginAdmin:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
   types.Token:
     properties:
       token:
@@ -11,11 +21,30 @@ info:
 paths:
   /admin/api/login:
     post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Admin credentials
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/types.LoginAdmin'
       produces:
       - application/json
       responses:
-        "418":
-          description: I'm a teapot
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Invalid credentials
           schema:
             additionalProperties: true
             type: object

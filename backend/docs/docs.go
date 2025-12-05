@@ -17,6 +17,9 @@ const docTemplate = `{
     "paths": {
         "/admin/api/login": {
             "post": {
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -24,9 +27,34 @@ const docTemplate = `{
                     "admin"
                 ],
                 "summary": "Admin login",
+                "parameters": [
+                    {
+                        "description": "Admin credentials",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.LoginAdmin"
+                        }
+                    }
+                ],
                 "responses": {
-                    "418": {
-                        "description": "I'm a teapot",
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -79,6 +107,21 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "types.LoginAdmin": {
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
         "types.Token": {
             "type": "object",
             "required": [
