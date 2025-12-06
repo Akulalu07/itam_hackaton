@@ -44,6 +44,8 @@ export interface User {
   status: UserStatus;
   skills: UserSkill[];
   experience: string; // e.g., "2 years", "Junior", etc.
+  lookingFor?: string[]; // Roles/skills looking for in team
+  contactInfo?: string; // telegram, email, etc.
   
   // Gamification
   mmr: number;        // Match Making Rating
@@ -54,6 +56,7 @@ export interface User {
   // Hackathon related
   currentHackathonId?: string;
   currentTeamId?: string;
+  profileComplete?: boolean;
   
   createdAt: Date;
   updatedAt: Date;

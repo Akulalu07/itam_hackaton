@@ -27,7 +27,8 @@ interface AuthStore {
   loginWithTelegram: (telegramData?: { id: string; name: string }) => Promise<void>;
   loginAsAdmin: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
-  updateProfile: (data: Partial<User>) => void;
+  updateProfile: (data: Partial<User>) => Promise<void>;
+  updateProfileLocal: (data: Partial<User>) => void;
   setCurrentHackathon: (hackathonId: string) => void;
   becomeCaptain: () => void;
   setUser: (user: User) => void;
@@ -106,7 +107,31 @@ export const useAuthStore = create<AuthStore>()(
         });
       },
 
-      updateProfile: (data) => {
+      updateProfile: async (data) => {
+        set({ isLoading: true, error: null });
+        try {
+          // Преобразуем skills для бэкенда (массив имён)
+          const apiData: Record<string, unknown> = { ...data };
+          if (data.skills) {
+            apiData.skills = data.skills.map(s => typeof s === 'string' ? s : s.name);
+          }
+          
+          const updatedUser = await userService.updateProfile(apiData as any);
+          set({ 
+            user: { ...updatedUser, title: getTitleByPoints(updatedUser.pts || 0) },
+            isLoading: false 
+          });
+        } catch (error) {
+          console.error('Update profile error:', error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : 'Ошибка обновления профиля' 
+          });
+          throw error;
+        }
+      },
+
+      updateProfileLocal: (data) => {
         const { user } = get();
         if (user) {
           const updatedUser = { 

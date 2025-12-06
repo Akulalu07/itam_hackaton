@@ -3,6 +3,7 @@ import { SwipeDeck } from '../../features/swipe';
 import { InvitesList } from '../../features/invites';
 import { TeamHub } from '../../features/team';
 import { UserProfile } from '../../features/profile';
+import { ProfilePage as ProfileEditPageComponent } from './ProfilePage';
 
 export function SelectHackathonPage() {
   return (
@@ -19,13 +20,7 @@ export function ProfilePage() {
 }
 
 export function ProfileEditPage() {
-  return (
-    <PlaceholderPage 
-      title="Редактирование профиля"
-      description="Обновите информацию о себе"
-      icon="✏️"
-    />
-  );
+  return <ProfileEditPageComponent />;
 }
 
 export function CreateTeamPage() {

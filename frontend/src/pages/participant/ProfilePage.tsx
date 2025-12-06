@@ -1,20 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
+  ArrowLeft,
   X, 
   Plus, 
-  ChevronRight, 
-  Sparkles, 
+  Save,
   Code, 
   Palette, 
   Database, 
   Brain, 
   Settings,
   Users,
-  Briefcase
+  Briefcase,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useStore';
-import { ROUTES } from '../../routes';
 import { UserSkill, SkillLevel } from '../../types';
 
 // Предустановленные навыки по категориям
@@ -45,20 +46,67 @@ const EXPERIENCE_OPTIONS = [
 ];
 
 /**
- * ProfileSetup - Форма заполнения профиля
- * Навыки (теги), Роль, Опыт + плейсхолдер для квиза калибровки
+ * ProfilePage - Страница редактирования профиля
  */
-export function ProfileSetup() {
+export function ProfilePage() {
   const navigate = useNavigate();
-  const { updateProfile } = useAuthStore();
+  const { user, updateProfile, isLoading } = useAuthStore();
   
+  // Инициализация из текущего профиля
   const [selectedRole, setSelectedRole] = useState<string>('');
   const [selectedExperience, setSelectedExperience] = useState<string>('');
   const [skills, setSkills] = useState<UserSkill[]>([]);
   const [skillInput, setSkillInput] = useState('');
   const [activeCategory, setActiveCategory] = useState<keyof typeof SKILL_PRESETS>('frontend');
   const [bio, setBio] = useState('');
-  const [showQuizModal, setShowQuizModal] = useState(false);
+  const [name, setName] = useState('');
+  const [contactInfo, setContactInfo] = useState('');
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // Загрузить данные из профиля при монтировании
+  useEffect(() => {
+    if (user) {
+      setName(user.name || '');
+      setBio(user.bio || '');
+      setSelectedExperience(user.experience || '');
+      setContactInfo(user.contactInfo || '');
+      setSelectedRole(user.lookingFor?.[0] || '');
+      
+      // Конвертируем skills
+      if (user.skills && Array.isArray(user.skills)) {
+        const userSkills: UserSkill[] = user.skills.map((s, idx) => {
+          if (typeof s === 'string') {
+            return {
+              id: `skill-${idx}`,
+              name: s,
+              level: 'intermediate' as SkillLevel,
+              category: 'other' as const,
+            };
+          }
+          return s;
+        });
+        setSkills(userSkills);
+      }
+    }
+  }, [user]);
+
+  // Отслеживание изменений
+  useEffect(() => {
+    if (!user) return;
+    
+    const skillNames = skills.map(s => s.name).sort().join(',');
+    const originalSkillNames = (user.skills || []).map(s => typeof s === 'string' ? s : s.name).sort().join(',');
+    
+    const changed = 
+      name !== (user.name || '') ||
+      bio !== (user.bio || '') ||
+      selectedExperience !== (user.experience || '') ||
+      selectedRole !== (user.lookingFor?.[0] || '') ||
+      contactInfo !== (user.contactInfo || '') ||
+      skillNames !== originalSkillNames;
+    
+    setHasChanges(changed);
+  }, [name, bio, selectedExperience, selectedRole, contactInfo, skills, user]);
 
   // Add skill
   const addSkill = (skillName: string, category?: keyof typeof SKILL_PRESETS) => {
@@ -88,29 +136,24 @@ export function ProfileSetup() {
     }
   };
 
-  // Check if form is complete
-  const isFormComplete = selectedRole && selectedExperience && skills.length >= 2;
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
   // Handle submit
-  const handleSubmit = async () => {
-    if (!isFormComplete || isSubmitting) return;
+  const handleSave = async () => {
+    if (isLoading) return;
     
-    setIsSubmitting(true);
     try {
       await updateProfile({
+        name,
         skills,
         experience: selectedExperience,
         bio,
-        lookingFor: [selectedRole], // роль которую ищем
+        lookingFor: selectedRole ? [selectedRole] : undefined,
+        contactInfo,
       });
       
-      navigate(ROUTES.DASHBOARD, { replace: true });
+      setHasChanges(false);
+      navigate(-1); // Вернуться назад
     } catch (error) {
       console.error('Failed to save profile:', error);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -118,27 +161,44 @@ export function ProfileSetup() {
     <div className="min-h-screen bg-base-100 pb-safe">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-base-100/80 backdrop-blur-lg border-b border-base-200">
-        <div className="px-4 py-4 max-w-lg mx-auto">
-          <h1 className="text-xl font-bold">Настройка профиля</h1>
-          <p className="text-sm text-base-content/60">Заполни информацию о себе</p>
-        </div>
-        {/* Progress */}
-        <div className="h-1 bg-base-200">
-          <div 
-            className="h-full bg-primary transition-all duration-500"
-            style={{ 
-              width: `${(
-                (selectedRole ? 25 : 0) + 
-                (selectedExperience ? 25 : 0) + 
-                (skills.length >= 2 ? 25 : skills.length * 12.5) + 
-                (bio ? 25 : 0)
-              )}%` 
-            }}
-          />
+        <div className="px-4 py-4 max-w-lg mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate(-1)} className="btn btn-ghost btn-sm btn-circle">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold">Редактировать профиль</h1>
+            </div>
+          </div>
+          
+          <button 
+            onClick={handleSave}
+            disabled={!hasChanges || isLoading}
+            className="btn btn-primary btn-sm gap-2"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            Сохранить
+          </button>
         </div>
       </div>
 
       <div className="px-4 py-6 max-w-lg mx-auto space-y-8">
+        {/* Name */}
+        <section>
+          <h2 className="text-lg font-semibold mb-3">Имя</h2>
+          <input
+            type="text"
+            placeholder="Твоё имя"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            className="input input-bordered w-full"
+          />
+        </section>
+
         {/* Role Selection */}
         <section>
           <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
@@ -297,69 +357,21 @@ export function ProfileSetup() {
           <p className="text-xs text-base-content/50 text-right mt-1">{bio.length}/300</p>
         </section>
 
-        {/* PTS Calibration Quiz Placeholder */}
-        <section className="bg-gradient-to-r from-primary/20 to-secondary/20 rounded-2xl p-5">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-warning/20 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Sparkles className="w-6 h-6 text-warning" />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-semibold mb-1">Калибровка PTS рейтинга</h3>
-              <p className="text-sm text-base-content/70 mb-3">
-                Пройди короткий квиз, чтобы получить начальный рейтинг и найти подходящую команду
-              </p>
-              <button 
-                onClick={() => setShowQuizModal(true)}
-                className="btn btn-warning btn-sm gap-2"
-              >
-                Пройти квиз
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+        {/* Contact Info */}
+        <section>
+          <h2 className="text-lg font-semibold mb-3">Контакты</h2>
+          <input
+            type="text"
+            placeholder="@telegram или email"
+            value={contactInfo}
+            onChange={e => setContactInfo(e.target.value)}
+            className="input input-bordered w-full"
+          />
+          <p className="text-xs text-base-content/50 mt-1">
+            Будет виден только членам твоей команды
+          </p>
         </section>
-
-        {/* Submit Button */}
-        <button
-          onClick={handleSubmit}
-          disabled={!isFormComplete || isSubmitting}
-          className="btn btn-primary btn-lg w-full"
-        >
-          {isSubmitting ? (
-            <>
-              <span className="loading loading-spinner loading-sm"></span>
-              Сохранение...
-            </>
-          ) : (
-            'Сохранить и продолжить'
-          )}
-        </button>
       </div>
-
-      {/* Quiz Modal Placeholder */}
-      {showQuizModal && (
-        <div className="modal modal-open">
-          <div className="modal-box">
-            <h3 className="font-bold text-lg mb-4">🎮 Калибровочный квиз</h3>
-            <div className="text-center py-8">
-              <div className="text-6xl mb-4">🚧</div>
-              <p className="text-base-content/70">
-                Квиз калибровки в разработке.<br />
-                Скоро здесь появятся вопросы для определения твоего начального рейтинга!
-              </p>
-            </div>
-            <div className="modal-action">
-              <button 
-                className="btn"
-                onClick={() => setShowQuizModal(false)}
-              >
-                Закрыть
-              </button>
-            </div>
-          </div>
-          <div className="modal-backdrop" onClick={() => setShowQuizModal(false)} />
-        </div>
-      )}
     </div>
   );
 }
