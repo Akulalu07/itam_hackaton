@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"backend/internal/database"
+	"backend/internal/middleware"
 	"backend/internal/repositories"
 	"backend/internal/services"
+	"context"
 	"fmt"
 	"os"
 
@@ -40,7 +42,7 @@ func StartServer() {
 	}
 
 	// Auto-migrate
-	if err := database.AutoMigrate(db); err != nil {
+	if err := database.AutoMigrate(); err != nil {
 		panic(fmt.Sprintf("failed auto-migrate: %v", err))
 	}
 
@@ -54,20 +56,92 @@ func StartServer() {
 		NotificationService: notificationService,
 	}
 
-	// PUBLIC ROUTES
-	r.POST("/api/auth/telegram", server.AuthTelegram)
+	// ============================================
+	// PUBLIC ROUTES (No Auth Required)
+	// ============================================
+	public := r.Group("/api")
+	{
+		public.POST("/auth/telegram", server.AuthTelegram)
+		public.POST("/auth/refresh", server.RefreshToken)
+		public.POST("/token", takeToken)            // Token exchange from TG bot
+		public.POST("/user/register", registerUser) // Register user from TG bot
+		public.GET("/health", func(c *gin.Context) {
+			c.JSON(200, gin.H{"status": "ok"})
+		})
+	}
+
+	// Admin login (separate)
 	r.POST("/admin/api/login", server.AdminLogin)
 
-	// USER ROUTES
-	r.GET("/api/users/me", server.GetMe)
-	r.PATCH("/api/users/me/profile", server.UpdateProfile)
-	r.GET("/api/users/:id", server.GetUser)
-	r.POST("/api/notification", server.SendNotification)
-
-	// ADMIN — promote to hackathon creator
-	r.POST("/api/admin/promote", server.AdminPromoteToCreator)
-
+	// Swagger docs (public)
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// ============================================
+	// PROTECTED ROUTES (JWT Auth Required)
+	// ============================================
+	protected := r.Group("/api")
+	protected.Use(middleware.JWTAuthMiddleware())
+	{
+		// User routes
+		protected.GET("/users/me", server.GetMe)
+		protected.PATCH("/users/me/profile", server.UpdateProfile)
+		protected.GET("/users/:id", server.GetUser)
+
+		// Recommendations & Swipe
+		protected.GET("/recommendations", server.GetRecommendations)
+		protected.POST("/swipe", server.Swipe)
+
+		// Teams
+		protected.GET("/teams", server.GetTeams)
+		protected.GET("/teams/my", server.GetMyTeam)
+		protected.POST("/teams", server.CreateTeam)
+		protected.PUT("/teams/:id", server.UpdateTeam)
+		protected.POST("/teams/:id/leave", server.LeaveTeam)
+		protected.POST("/teams/:id/kick", server.KickMember)
+		protected.PUT("/teams/:id/status", server.UpdateTeamStatus)
+		protected.POST("/teams/:id/invite-link", server.GenerateInviteLink)
+		protected.POST("/teams/join", server.JoinTeamByCode)
+
+		// Invites
+		protected.GET("/invites/incoming", server.GetIncomingInvites)
+		protected.GET("/invites/outgoing", server.GetOutgoingInvites)
+		protected.POST("/invites", server.SendInvite)
+		protected.POST("/invites/:id/accept", server.AcceptInvite)
+		protected.POST("/invites/:id/decline", server.DeclineInvite)
+		protected.DELETE("/invites/:id", server.CancelInvite)
+
+		// Hackathons
+		protected.GET("/hackathons", server.GetHackathons)
+		protected.GET("/hackathons/active", server.GetActiveHackathons)
+		protected.GET("/hackathons/:id", server.GetHackathon)
+		protected.POST("/hackathons/:id/register", server.RegisterForHackathon)
+
+		// Notifications
+		protected.POST("/notification", server.SendNotification)
+	}
+
+	// ============================================
+	// ADMIN ROUTES (Admin Role Required)
+	// ============================================
+	admin := r.Group("/api/admin")
+	admin.Use(middleware.JWTAuthMiddleware())
+	admin.Use(middleware.RequireRoleMiddleware("admin"))
+	{
+		admin.POST("/promote", server.AdminPromoteToCreator)
+		admin.GET("/stats", server.GetAdminStats)
+		admin.GET("/users", server.GetAllUsers)
+		admin.PUT("/users/:id", server.AdminUpdateUser)
+		admin.GET("/teams", server.GetAllTeams)
+		admin.POST("/assign", server.AdminAssignToTeam)
+		admin.POST("/hackathons", server.CreateHackathon)
+		admin.PUT("/hackathons/:id", server.AdminUpdateHackathon)
+		admin.DELETE("/hackathons/:id", server.DeleteHackathon)
+	}
+
+	// Health check endpoint
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok", "service": "itam-hackaton-backend"})
+	})
 
 	if err := r.Run("0.0.0.0:8080"); err != nil {
 		panic(err)
@@ -90,13 +164,25 @@ func getEnv(key, def string) string {
 // ---------------------- REDIS ----------------------
 
 func connectToRedis() *redis.Client {
-	client := redis.NewClient(&redis.Options{
-		Addr:     getEnv("REDISADDR", "redis:6379"),
-		Username: getEnv("REDISUSER", "admin"),
-		Password: getEnv("REDISPASSWORD", "some_pass"),
-		DB:       0,
-	})
-	if err := client.Ping(client.Context()).Err(); err != nil {
+	redisAddr := getEnv("REDISADDR", "redis:6379")
+	redisUser := getEnv("REDISUSER", "")
+	redisPass := getEnv("REDISPASSWORD", "")
+
+	opts := &redis.Options{
+		Addr: redisAddr,
+		DB:   0,
+	}
+
+	// Only set username/password if they are provided
+	if redisUser != "" {
+		opts.Username = redisUser
+	}
+	if redisPass != "" {
+		opts.Password = redisPass
+	}
+
+	client := redis.NewClient(opts)
+	if err := client.Ping(context.Background()).Err(); err != nil {
 		panic("Failed to connect Redis: " + err.Error())
 	}
 	return client

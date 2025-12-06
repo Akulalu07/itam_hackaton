@@ -2,15 +2,24 @@ package models
 
 import "time"
 
+type TeamStatus string
+
+const (
+	TeamStatusLooking TeamStatus = "looking"
+	TeamStatusReady   TeamStatus = "ready"
+	TeamStatusClosed  TeamStatus = "closed"
+)
+
 type Team struct {
-	ID          int64  `gorm:"primaryKey;autoIncrement" json:"id"`
-	HackathonID int64  `gorm:"index;not null" json:"hackathonId"`
-	Name        string `gorm:"not null" json:"name"`
-	CaptainID   int64  `gorm:"index;not null" json:"captainId"`
+	ID          int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	HackathonID int64      `gorm:"index" json:"hackathonId"`
+	Name        string     `gorm:"not null" json:"name"`
+	Description *string    `gorm:"type:text" json:"description,omitempty"`
+	CaptainID   int64      `gorm:"index" json:"captainId"`
+	Status      TeamStatus `gorm:"type:varchar(20);default:'looking'" json:"status"`
+	InviteCode  *string    `gorm:"type:varchar(20);uniqueIndex" json:"inviteCode,omitempty"`
 
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
-
-	Members []User `gorm:"foreignKey:TeamID"`
 }
 type TeamJoinRequest struct {
 	ID     int64  `gorm:"primaryKey;autoIncrement" json:"id"`

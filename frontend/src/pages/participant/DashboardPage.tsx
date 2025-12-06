@@ -9,7 +9,7 @@ import { useEffect } from 'react';
  */
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { user, becomeCapatin } = useAuthStore();
+  const { user, becomeCaptain } = useAuthStore();
   const { selectedHackathon, fetchHackathons, hackathons, selectHackathon } = useHackathonStore();
 
   useEffect(() => {
@@ -23,7 +23,7 @@ export function DashboardPage() {
   }, [hackathons]);
 
   const handleCreateTeam = () => {
-    becomeCapatin();
+    becomeCaptain();
     navigate(ROUTES.CREATE_TEAM);
   };
 

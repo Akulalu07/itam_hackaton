@@ -1,15 +1,17 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { User, Hackathon, Team, Invite, SwipeAction } from '../types';
-import { 
-  mockUsers, 
-  mockHackathons, 
-  mockTeams, 
-  mockInvites, 
-  mockCurrentUser,
-  mockAdminUser,
-  getTitleByPoints 
-} from '../data/mockData';
+import { User, Hackathon, Team, Invite, SwipeAction, GamificationTitle } from '../types';
+import { userService, hackathonService, teamService, inviteService, swipeService } from '../api/services';
+import { tokenUtils } from '../api/axiosClient';
+
+// Вспомогательная функция для определения титула по очкам
+const getTitleByPoints = (pts: number): GamificationTitle => {
+  if (pts >= 1000) return 'Легенда';
+  if (pts >= 500) return 'Профи';
+  if (pts >= 200) return 'Активист';
+  if (pts >= 50) return 'Участник';
+  return 'Новичок';
+};
 
 // ============================================
 // AUTH STORE
@@ -19,6 +21,7 @@ interface AuthStore {
   user: User | null;
   token: string | null;
   isLoading: boolean;
+  error: string | null;
   
   // Actions
   loginWithTelegram: (telegramData?: { id: string; name: string }) => Promise<void>;
@@ -26,7 +29,11 @@ interface AuthStore {
   logout: () => void;
   updateProfile: (data: Partial<User>) => void;
   setCurrentHackathon: (hackathonId: string) => void;
-  becomeCapatin: () => void;
+  becomeCaptain: () => void;
+  setUser: (user: User) => void;
+  setToken: (token: string) => void;
+  fetchProfile: () => Promise<void>;
+  clearError: () => void;
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -36,51 +43,66 @@ export const useAuthStore = create<AuthStore>()(
       user: null,
       token: null,
       isLoading: false,
+      error: null,
 
-      loginWithTelegram: async (telegramData) => {
-        set({ isLoading: true });
-        // Mock delay to simulate API call
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        const user: User = {
-          ...mockCurrentUser,
-          id: telegramData?.id || mockCurrentUser.id,
-          name: telegramData?.name || mockCurrentUser.name,
-          telegramId: telegramData?.id || mockCurrentUser.telegramId,
-        };
-        
-        set({
-          isAuthenticated: true,
-          user,
-          token: 'mock-jwt-token-' + Date.now(),
-          isLoading: false,
-        });
+      loginWithTelegram: async (_telegramData) => {
+        set({ isLoading: true, error: null });
+        try {
+          // Токен уже должен быть установлен через setToken после авторизации через бота
+          // Здесь просто загружаем профиль
+          const user = await userService.getProfile();
+          set({
+            isAuthenticated: true,
+            user,
+            isLoading: false,
+          });
+        } catch (error) {
+          console.error('Login error:', error);
+          set({ 
+            isLoading: false, 
+            error: error instanceof Error ? error.message : 'Ошибка авторизации' 
+          });
+        }
       },
 
       loginAsAdmin: async (email, password) => {
-        set({ isLoading: true });
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // Mock admin auth
+        set({ isLoading: true, error: null });
+        // TODO: Реализовать admin login через API
+        // Пока используем простую проверку для разработки
         if (email === 'admin@itam.courses' && password === 'admin123') {
+          const adminUser: User = {
+            id: 'admin-1',
+            name: 'Admin User',
+            role: 'admin',
+            status: 'inactive',
+            skills: [],
+            experience: '',
+            mmr: 0,
+            pts: 0,
+            title: 'Новичок',
+            nftStickers: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
           set({
             isAuthenticated: true,
-            user: mockAdminUser,
-            token: 'mock-admin-jwt-token-' + Date.now(),
+            user: adminUser,
+            token: 'admin-dev-token',
             isLoading: false,
           });
           return true;
         }
-        
-        set({ isLoading: false });
+        set({ isLoading: false, error: 'Неверный email или пароль' });
         return false;
       },
 
       logout: () => {
+        tokenUtils.removeToken();
         set({
           isAuthenticated: false,
           user: null,
           token: null,
+          error: null,
         });
       },
 
@@ -104,16 +126,44 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
 
-      becomeCapatin: () => {
+      becomeCaptain: () => {
         const { user } = get();
         if (user) {
           set({ user: { ...user, role: 'captain' } });
         }
       },
+
+      setUser: (user: User) => {
+        set({ user, isAuthenticated: true });
+      },
+
+      setToken: (token: string) => {
+        tokenUtils.setToken(token);
+        set({ token, isAuthenticated: true });
+      },
+
+      fetchProfile: async () => {
+        const { token } = get();
+        if (!token) return;
+        
+        set({ isLoading: true, error: null });
+        try {
+          const user = await userService.getProfile();
+          set({ user, isAuthenticated: true, isLoading: false });
+        } catch (error) {
+          console.error('Fetch profile error:', error);
+          // Если токен невалидный - логаут
+          get().logout();
+          set({ isLoading: false });
+        }
+      },
+
+      clearError: () => set({ error: null }),
     }),
     {
       name: 'itam-auth-storage',
       storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({ token: state.token }),
     }
   )
 );
@@ -125,24 +175,34 @@ interface HackathonStore {
   hackathons: Hackathon[];
   selectedHackathon: Hackathon | null;
   isLoading: boolean;
+  error: string | null;
   
   // Actions
   fetchHackathons: () => Promise<void>;
   selectHackathon: (id: string) => void;
-  createHackathon: (data: Omit<Hackathon, 'id' | 'createdAt' | 'participantsCount' | 'teamsCount'>) => void;
-  updateHackathon: (id: string, data: Partial<Hackathon>) => void;
-  deleteHackathon: (id: string) => void;
+  createHackathon: (data: Omit<Hackathon, 'id' | 'createdAt' | 'participantsCount' | 'teamsCount'>) => Promise<void>;
+  updateHackathon: (id: string, data: Partial<Hackathon>) => Promise<void>;
+  deleteHackathon: (id: string) => Promise<void>;
 }
 
 export const useHackathonStore = create<HackathonStore>((set, get) => ({
   hackathons: [],
   selectedHackathon: null,
   isLoading: false,
+  error: null,
 
   fetchHackathons: async () => {
-    set({ isLoading: true });
-    await new Promise(resolve => setTimeout(resolve, 500));
-    set({ hackathons: mockHackathons, isLoading: false });
+    set({ isLoading: true, error: null });
+    try {
+      const hackathons = await hackathonService.getAll();
+      set({ hackathons, isLoading: false });
+    } catch (error) {
+      console.error('Fetch hackathons error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка загрузки хакатонов'
+      });
+    }
   },
 
   selectHackathon: (id) => {
@@ -150,29 +210,73 @@ export const useHackathonStore = create<HackathonStore>((set, get) => ({
     set({ selectedHackathon: hackathon });
   },
 
-  createHackathon: (data) => {
-    const newHackathon: Hackathon = {
-      ...data,
-      id: 'hack-' + Date.now(),
-      participantsCount: 0,
-      teamsCount: 0,
-      createdAt: new Date(),
-    };
-    set(state => ({ hackathons: [...state.hackathons, newHackathon] }));
+  createHackathon: async (data) => {
+    set({ isLoading: true, error: null });
+    try {
+      const newHackathon = await hackathonService.create({
+        name: data.name,
+        description: data.description,
+        startDate: data.startDate.toISOString(),
+        endDate: data.endDate.toISOString(),
+        registrationDeadline: data.registrationDeadline.toISOString(),
+        maxTeamSize: data.maxTeamSize,
+        minTeamSize: data.minTeamSize,
+        imageUrl: data.imageUrl,
+      });
+      set(state => ({ 
+        hackathons: [...state.hackathons, newHackathon],
+        isLoading: false 
+      }));
+    } catch (error) {
+      console.error('Create hackathon error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка создания хакатона'
+      });
+    }
   },
 
-  updateHackathon: (id, data) => {
-    set(state => ({
-      hackathons: state.hackathons.map(h => 
-        h.id === id ? { ...h, ...data } : h
-      ),
-    }));
+  updateHackathon: async (id, data) => {
+    set({ isLoading: true, error: null });
+    try {
+      const updated = await hackathonService.update(id, {
+        name: data.name,
+        description: data.description,
+        startDate: data.startDate?.toISOString(),
+        endDate: data.endDate?.toISOString(),
+        registrationDeadline: data.registrationDeadline?.toISOString(),
+        maxTeamSize: data.maxTeamSize,
+        minTeamSize: data.minTeamSize,
+        imageUrl: data.imageUrl,
+      });
+      set(state => ({
+        hackathons: state.hackathons.map(h => h.id === id ? updated : h),
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Update hackathon error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка обновления хакатона'
+      });
+    }
   },
 
-  deleteHackathon: (id) => {
-    set(state => ({
-      hackathons: state.hackathons.filter(h => h.id !== id),
-    }));
+  deleteHackathon: async (id) => {
+    set({ isLoading: true, error: null });
+    try {
+      await hackathonService.delete(id);
+      set(state => ({
+        hackathons: state.hackathons.filter(h => h.id !== id),
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Delete hackathon error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка удаления хакатона'
+      });
+    }
   },
 }));
 
@@ -182,70 +286,93 @@ export const useHackathonStore = create<HackathonStore>((set, get) => ({
 interface SwipeStore {
   deck: User[];
   swipedUsers: SwipeAction[];
+  lastSwipedUser: User | null;
   isLoading: boolean;
+  error: string | null;
   
   // Actions
-  fetchDeck: (hackathonId: string) => Promise<void>;
-  swipe: (userId: string, direction: 'left' | 'right') => void;
-  undoLastSwipe: () => void;
+  fetchDeck: (hackathonId?: string) => Promise<void>;
+  swipe: (userId: string, direction: 'left' | 'right') => Promise<void>;
+  undoLastSwipe: () => Promise<void>;
   resetDeck: () => void;
 }
 
 export const useSwipeStore = create<SwipeStore>((set, get) => ({
   deck: [],
   swipedUsers: [],
+  lastSwipedUser: null,
   isLoading: false,
+  error: null,
 
   fetchDeck: async (hackathonId) => {
-    set({ isLoading: true });
-    await new Promise(resolve => setTimeout(resolve, 500));
-    // Filter out users already in teams for this hackathon
-    console.log('Fetching deck for hackathon:', hackathonId);
-    const availableUsers = mockUsers.filter(u => u.status === 'looking');
-    set({ deck: availableUsers, isLoading: false });
+    set({ isLoading: true, error: null });
+    try {
+      const users = await swipeService.getDeck(hackathonId);
+      set({ deck: users, isLoading: false });
+    } catch (error) {
+      console.error('Fetch deck error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка загрузки рекомендаций'
+      });
+    }
   },
 
-  swipe: (userId, direction) => {
-    const { deck, swipedUsers } = get();
-    const swipeAction: SwipeAction = {
-      id: 'swipe-' + Date.now(),
-      swiperId: 'current-user',
-      targetUserId: userId,
-      direction,
-      createdAt: new Date(),
-    };
+  swipe: async (userId, direction) => {
+    const { deck } = get();
+    const targetUser = deck.find(u => u.id === userId);
     
-    set({
-      deck: deck.filter(u => u.id !== userId),
-      swipedUsers: [...swipedUsers, swipeAction],
-    });
+    // Оптимистичное обновление UI
+    set(state => ({
+      deck: state.deck.filter(u => u.id !== userId),
+      lastSwipedUser: targetUser || null,
+      swipedUsers: [...state.swipedUsers, {
+        id: 'swipe-' + Date.now(),
+        swiperId: 'current-user',
+        targetUserId: userId,
+        direction,
+        createdAt: new Date(),
+      }],
+    }));
 
-    // If swiped right, create an invite (mock)
-    if (direction === 'right') {
-      const targetUser = deck.find(u => u.id === userId);
+    try {
+      const action = direction === 'right' ? 'like' : 'pass';
+      const response = await swipeService.swipe(parseInt(userId, 10), action);
+      
+      if (response.match && targetUser) {
+        console.log(`Match with ${targetUser.name}!`);
+        // Можно добавить уведомление о match
+      }
+    } catch (error) {
+      console.error('Swipe error:', error);
+      // Откатываем изменение при ошибке
       if (targetUser) {
-        console.log(`Invite sent to ${targetUser.name}`);
+        set(state => ({
+          deck: [targetUser, ...state.deck],
+          swipedUsers: state.swipedUsers.slice(0, -1),
+        }));
       }
     }
   },
 
-  undoLastSwipe: () => {
-    const { swipedUsers } = get();
-    if (swipedUsers.length === 0) return;
+  undoLastSwipe: async () => {
+    const { lastSwipedUser, swipedUsers } = get();
+    if (!lastSwipedUser || swipedUsers.length === 0) return;
     
-    const lastSwipe = swipedUsers[swipedUsers.length - 1];
-    const restoredUser = mockUsers.find(u => u.id === lastSwipe.targetUserId);
-    
-    if (restoredUser) {
+    try {
+      await swipeService.undoSwipe();
       set(state => ({
-        deck: [restoredUser, ...state.deck],
+        deck: [lastSwipedUser, ...state.deck],
         swipedUsers: state.swipedUsers.slice(0, -1),
+        lastSwipedUser: null,
       }));
+    } catch (error) {
+      console.error('Undo swipe error:', error);
     }
   },
 
   resetDeck: () => {
-    set({ deck: [], swipedUsers: [] });
+    set({ deck: [], swipedUsers: [], lastSwipedUser: null });
   },
 }));
 
@@ -255,93 +382,174 @@ export const useSwipeStore = create<SwipeStore>((set, get) => ({
 interface TeamStore {
   teams: Team[];
   currentTeam: Team | null;
+  teamMembers: User[];
   isLoading: boolean;
+  error: string | null;
   
   // Actions
   fetchTeams: (hackathonId?: string) => Promise<void>;
-  createTeam: (name: string, hackathonId: string, captainId: string) => Team;
-  joinTeam: (teamId: string, userId: string) => void;
-  leaveTeam: (teamId: string, userId: string) => void;
-  kickMember: (teamId: string, userId: string) => void;
+  fetchMyTeam: () => Promise<void>;
+  createTeam: (data: { name: string; hackathonId: string; description?: string }) => Promise<Team | null>;
+  joinTeam: (teamId: string, code?: string) => Promise<void>;
+  leaveTeam: (teamId: string) => Promise<void>;
+  kickMember: (teamId: string, userId: string) => Promise<void>;
   setCurrentTeam: (team: Team | null) => void;
+  updateTeamStatus: (teamId: string, status: 'open' | 'closed') => Promise<void>;
 }
 
-export const useTeamStore = create<TeamStore>((set, get) => ({
+export const useTeamStore = create<TeamStore>((set) => ({
   teams: [],
   currentTeam: null,
+  teamMembers: [],
   isLoading: false,
+  error: null,
 
   fetchTeams: async (hackathonId) => {
-    set({ isLoading: true });
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const teams = hackathonId 
-      ? mockTeams.filter(t => t.hackathonId === hackathonId)
-      : mockTeams;
-    set({ teams, isLoading: false });
+    set({ isLoading: true, error: null });
+    try {
+      const teams = await teamService.getAll(hackathonId);
+      set({ teams, isLoading: false });
+    } catch (error) {
+      console.error('Fetch teams error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка загрузки команд'
+      });
+    }
   },
 
-  createTeam: (name, hackathonId, captainId) => {
-    const captain = mockUsers.find(u => u.id === captainId) || mockCurrentUser;
-    const newTeam: Team = {
-      id: 'team-' + Date.now(),
-      name,
-      hackathonId,
-      captainId,
-      members: [{
-        userId: captainId,
-        user: captain,
-        role: 'captain',
-        joinedAt: new Date(),
-      }],
-      maxSize: 5,
-      createdAt: new Date(),
-    };
-    
-    set(state => ({ 
-      teams: [...state.teams, newTeam],
-      currentTeam: newTeam,
-    }));
-    
-    return newTeam;
+  fetchMyTeam: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const team = await teamService.getMyTeam();
+      if (team) {
+        const members = team.members?.map(m => m.user) || [];
+        set({ currentTeam: team, teamMembers: members, isLoading: false });
+      } else {
+        set({ currentTeam: null, teamMembers: [], isLoading: false });
+      }
+    } catch (error) {
+      console.error('Fetch my team error:', error);
+      set({ currentTeam: null, teamMembers: [], isLoading: false });
+    }
   },
 
-  joinTeam: (teamId, userId) => {
-    const user = mockUsers.find(u => u.id === userId);
-    if (!user) return;
-    
-    set(state => ({
-      teams: state.teams.map(t => {
-        if (t.id === teamId && t.members.length < t.maxSize) {
-          return {
-            ...t,
-            members: [...t.members, { userId, user, role: 'member', joinedAt: new Date() }],
-          };
-        }
-        return t;
-      }),
-    }));
+  createTeam: async (data) => {
+    set({ isLoading: true, error: null });
+    try {
+      const newTeam = await teamService.create({
+        name: data.name,
+        hackathonId: data.hackathonId,
+        description: data.description,
+      });
+      
+      const members = newTeam.members?.map(m => m.user) || [];
+      set(state => ({ 
+        teams: [...state.teams, newTeam],
+        currentTeam: newTeam,
+        teamMembers: members,
+        isLoading: false,
+      }));
+      
+      return newTeam;
+    } catch (error) {
+      console.error('Create team error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка создания команды'
+      });
+      return null;
+    }
   },
 
-  leaveTeam: (teamId, userId) => {
-    set(state => ({
-      teams: state.teams.map(t => {
-        if (t.id === teamId) {
-          return {
-            ...t,
-            members: t.members.filter(m => m.userId !== userId),
-          };
-        }
-        return t;
-      }),
-    }));
+  joinTeam: async (teamId, code) => {
+    set({ isLoading: true, error: null });
+    try {
+      let team: Team;
+      if (code) {
+        team = await teamService.joinByCode(code);
+      } else {
+        // Если нет кода, предполагаем что есть invite - используем teamId напрямую
+        team = await teamService.getById(teamId);
+      }
+      
+      const members = team.members?.map(m => m.user) || [];
+      set(state => ({
+        teams: state.teams.map(t => t.id === teamId ? team : t),
+        currentTeam: team,
+        teamMembers: members,
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Join team error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка присоединения к команде'
+      });
+    }
   },
 
-  kickMember: (teamId, userId) => {
-    get().leaveTeam(teamId, userId);
+  leaveTeam: async (teamId) => {
+    set({ isLoading: true, error: null });
+    try {
+      await teamService.leave(teamId);
+      set(state => ({
+        teams: state.teams.filter(t => t.id !== teamId),
+        currentTeam: state.currentTeam?.id === teamId ? null : state.currentTeam,
+        teamMembers: state.currentTeam?.id === teamId ? [] : state.teamMembers,
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Leave team error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка выхода из команды'
+      });
+    }
+  },
+
+  kickMember: async (teamId, userId) => {
+    set({ isLoading: true, error: null });
+    try {
+      await teamService.kickMember(teamId, userId);
+      set(state => ({
+        teamMembers: state.teamMembers.filter(m => m.id !== userId),
+        currentTeam: state.currentTeam ? {
+          ...state.currentTeam,
+          members: state.currentTeam.members.filter(m => m.userId !== userId),
+        } : null,
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Kick member error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка исключения участника'
+      });
+    }
   },
 
   setCurrentTeam: (team) => {
-    set({ currentTeam: team });
+    const members = team?.members?.map(m => m.user) || [];
+    set({ currentTeam: team, teamMembers: members });
+  },
+
+  updateTeamStatus: async (teamId, status) => {
+    set({ isLoading: true, error: null });
+    try {
+      const updated = await teamService.updateStatus(teamId, status);
+      set(state => ({
+        teams: state.teams.map(t => t.id === teamId ? updated : t),
+        currentTeam: state.currentTeam?.id === teamId ? updated : state.currentTeam,
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Update team status error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка обновления статуса команды'
+      });
+    }
   },
 }));
 
@@ -352,63 +560,105 @@ interface InviteStore {
   invites: Invite[];
   sentInvites: Invite[];
   isLoading: boolean;
+  error: string | null;
   
   // Actions
-  fetchInvites: (userId: string) => Promise<void>;
-  sendInvite: (teamId: string, toUserId: string, message?: string) => void;
-  acceptInvite: (inviteId: string) => void;
-  declineInvite: (inviteId: string) => void;
+  fetchInvites: () => Promise<void>;
+  sendInvite: (toUserId: string, teamId: string, message?: string) => Promise<void>;
+  acceptInvite: (inviteId: string) => Promise<void>;
+  declineInvite: (inviteId: string) => Promise<void>;
+  cancelInvite: (inviteId: string) => Promise<void>;
 }
 
 export const useInviteStore = create<InviteStore>((set) => ({
   invites: [],
   sentInvites: [],
   isLoading: false,
+  error: null,
 
-  fetchInvites: async (userId) => {
-    set({ isLoading: true });
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const userInvites = mockInvites.filter(i => i.toUserId === userId && i.status === 'pending');
-    const sent = mockInvites.filter(i => i.fromUserId === userId);
-    set({ invites: userInvites, sentInvites: sent, isLoading: false });
+  fetchInvites: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const [incoming, outgoing] = await Promise.all([
+        inviteService.getIncoming(),
+        inviteService.getOutgoing(),
+      ]);
+      set({ invites: incoming, sentInvites: outgoing, isLoading: false });
+    } catch (error) {
+      console.error('Fetch invites error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка загрузки приглашений'
+      });
+    }
   },
 
-  sendInvite: (teamId, toUserId, message) => {
-    const team = mockTeams.find(t => t.id === teamId);
-    const toUser = mockUsers.find(u => u.id === toUserId);
-    if (!team || !toUser) return;
-
-    const newInvite: Invite = {
-      id: 'invite-' + Date.now(),
-      teamId,
-      team,
-      fromUserId: 'current-user',
-      fromUser: mockCurrentUser,
-      toUserId,
-      toUser,
-      status: 'pending',
-      message,
-      createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    };
-
-    set(state => ({ sentInvites: [...state.sentInvites, newInvite] }));
+  sendInvite: async (toUserId, teamId, message) => {
+    set({ isLoading: true, error: null });
+    try {
+      const newInvite = await inviteService.send(toUserId, teamId, message);
+      set(state => ({ 
+        sentInvites: [...state.sentInvites, newInvite],
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Send invite error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка отправки приглашения'
+      });
+    }
   },
 
-  acceptInvite: (inviteId) => {
-    set(state => ({
-      invites: state.invites.map(i => 
-        i.id === inviteId ? { ...i, status: 'accepted' } : i
-      ),
-    }));
+  acceptInvite: async (inviteId) => {
+    set({ isLoading: true, error: null });
+    try {
+      await inviteService.accept(inviteId);
+      set(state => ({
+        invites: state.invites.filter(i => i.id !== inviteId),
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Accept invite error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка принятия приглашения'
+      });
+    }
   },
 
-  declineInvite: (inviteId) => {
-    set(state => ({
-      invites: state.invites.map(i => 
-        i.id === inviteId ? { ...i, status: 'declined' } : i
-      ),
-    }));
+  declineInvite: async (inviteId) => {
+    set({ isLoading: true, error: null });
+    try {
+      await inviteService.decline(inviteId);
+      set(state => ({
+        invites: state.invites.filter(i => i.id !== inviteId),
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Decline invite error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка отклонения приглашения'
+      });
+    }
+  },
+
+  cancelInvite: async (inviteId) => {
+    set({ isLoading: true, error: null });
+    try {
+      await inviteService.cancel(inviteId);
+      set(state => ({
+        sentInvites: state.sentInvites.filter(i => i.id !== inviteId),
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error('Cancel invite error:', error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Ошибка отмены приглашения'
+      });
+    }
   },
 }));
 

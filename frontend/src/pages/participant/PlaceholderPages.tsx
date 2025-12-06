@@ -1,6 +1,8 @@
 import { PlaceholderPage } from '../../components/common/PlaceholderPage';
 import { SwipeDeck } from '../../features/swipe';
 import { InvitesList } from '../../features/invites';
+import { TeamHub } from '../../features/team';
+import { UserProfile } from '../../features/profile';
 
 export function SelectHackathonPage() {
   return (
@@ -13,13 +15,7 @@ export function SelectHackathonPage() {
 }
 
 export function ProfilePage() {
-  return (
-    <PlaceholderPage 
-      title="Мой профиль"
-      description="Ваши навыки, опыт и достижения"
-      icon="👤"
-    />
-  );
+  return <UserProfile />;
 }
 
 export function ProfileEditPage() {
@@ -47,23 +43,11 @@ export function SwipePage() {
 }
 
 export function TeamPage() {
-  return (
-    <PlaceholderPage 
-      title="Моя команда"
-      description="Состав вашей команды"
-      icon="👥"
-    />
-  );
+  return <TeamHub />;
 }
 
 export function TeamManagePage() {
-  return (
-    <PlaceholderPage 
-      title="Управление командой"
-      description="Настройки команды для капитана"
-      icon="⚙️"
-    />
-  );
+  return <TeamHub />;
 }
 
 export function InvitesPage() {

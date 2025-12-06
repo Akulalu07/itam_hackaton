@@ -6,6 +6,7 @@ export const ROUTES = {
   // Public routes
   HOME: '/',
   LOGIN: '/login',
+  TOKEN_AUTH: '/auth/token',
   
   // Participant routes
   DASHBOARD: '/dashboard',

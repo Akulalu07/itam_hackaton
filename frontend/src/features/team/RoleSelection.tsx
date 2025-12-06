@@ -10,7 +10,7 @@ import { ROUTES } from '../../routes';
  */
 export function RoleSelection() {
   const navigate = useNavigate();
-  const { user, becomeCapatin, updateProfile } = useAuthStore();
+  const { user, becomeCaptain, updateProfile } = useAuthStore();
   const { createTeam } = useTeamStore();
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [teamName, setTeamName] = useState('');
@@ -21,11 +21,15 @@ export function RoleSelection() {
   };
 
   // Create team and navigate to swipe
-  const handleCreateTeam = () => {
+  const handleCreateTeam = async () => {
     if (!teamName.trim()) return;
     
-    becomeCapatin();
-    createTeam(teamName.trim(), 'hack-1', user?.id || 'current-user');
+    becomeCaptain();
+    // createTeam теперь принимает объект с параметрами
+    await createTeam({ 
+      name: teamName.trim(), 
+      hackathonId: user?.currentHackathonId || 'hack-1'
+    });
     navigate(ROUTES.SWIPE, { replace: true });
   };
 

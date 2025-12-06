@@ -8,6 +8,7 @@ import {
   HomePage,
   LoginPage, 
   AdminLoginPage,
+  TokenAuthPage,
   DashboardPage,
   SelectHackathonPage,
   ProfilePage,
@@ -63,6 +64,16 @@ function App() {
             element={
               <PublicRoute>
                 <AdminLoginPage />
+              </PublicRoute>
+            } 
+          />
+
+          {/* Token Auth (from TG bot) */}
+          <Route 
+            path={ROUTES.TOKEN_AUTH} 
+            element={
+              <PublicRoute>
+                <TokenAuthPage />
               </PublicRoute>
             } 
           />

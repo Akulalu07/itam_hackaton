@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	handlers.Start_server()
+	handlers.StartServer()
 }

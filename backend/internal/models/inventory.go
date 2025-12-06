@@ -26,8 +26,8 @@ type Clothes struct {
 	ID          int64         `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name        string        `gorm:"not null" json:"name"`
 	Description *string       `json:"description,omitempty"`
-	Rarity      RarityType    `gorm:"type:rarity_type;not null" json:"rarity"`
-	Slot        EquipmentSlot `gorm:"type:equipment_slot;not null" json:"slot"`
+	Rarity      RarityType    `gorm:"type:varchar(20);not null" json:"rarity"`
+	Slot        EquipmentSlot `gorm:"type:varchar(20);not null" json:"slot"`
 	ImagePath   string        `gorm:"not null" json:"imagePath"`
 	CreatedAt   time.Time     `gorm:"autoCreateTime" json:"createdAt"`
 }

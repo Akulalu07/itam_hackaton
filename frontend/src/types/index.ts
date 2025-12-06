@@ -76,6 +76,9 @@ export interface Hackathon {
   createdAt: Date;
 }
 
+// Team Status
+export type TeamStatus = 'open' | 'closed' | 'full';
+
 // Team
 export interface Team {
   id: string;
@@ -84,6 +87,8 @@ export interface Team {
   captainId: string;
   members: TeamMember[];
   maxSize: number;
+  maxMembers?: number; // alias for maxSize
+  status?: TeamStatus;
   description?: string;
   lookingFor?: string[]; // Skills they need
   createdAt: Date;

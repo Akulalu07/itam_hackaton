@@ -65,13 +65,22 @@ struct AuthorizedUser {
 
 #[tokio::main]
 async fn main() {
+    println!("=== TG Bot Starting ===");
     dotenvy::dotenv().ok();
+    
+    // Initialize logger
+    std::env::set_var("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()));
     pretty_env_logger::init();
+    
+    println!("Logger initialized");
     log::info!("Starting bot..");
 
     let onboarding_state: OnboardingStateMap = Arc::new(Mutex::new(HashMap::new()));
 
+    println!("Creating bot from env...");
     let bot = Bot::from_env();
+    println!("Bot created successfully");
+    
     let bot_clone = bot.clone();
     let onboarding_state_clone = onboarding_state.clone();
     tokio::spawn(async move {

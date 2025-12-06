@@ -26,21 +26,13 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    env_file:
-      - .env
-    command:
-      - "redis-server"
-      - "--user"
-      - "${REDISUSER}"
-      - "on"
-      - ">${REDISPASSWORD}"
-      - "~*"
-      - "+@all"
-      - "--user"
-      - "default"
-      - "off"
     networks:
       - default
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:

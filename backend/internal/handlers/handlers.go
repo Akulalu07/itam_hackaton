@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"backend/internal/database"
+	"backend/internal/middleware"
 	"backend/internal/types"
 	"context"
 	"fmt"
@@ -25,15 +26,18 @@ import (
 func takeToken(c *gin.Context) {
 	var req types.Token
 	if err := c.ShouldBindBodyWithJSON(&req); err != nil {
+		fmt.Printf("Token bind error: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	val, err := redisConn.Get(ctx, req.Token).Result()
+	fmt.Printf("Received token: '%s' (len=%d)\n", req.Token, len(req.Token))
+
+	val, err := redisConn.Get(c.Request.Context(), req.Token).Result()
 	if err != nil {
-		fmt.Println("Maybe you don't get this token")
+		fmt.Printf("Redis GET error for token '%s': %v\n", req.Token, err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid or expired token",
 		})
@@ -74,12 +78,31 @@ func takeToken(c *gin.Context) {
 		fmt.Printf("New user registered: %d (%s)\n", telegramUserID, name)
 	}
 
+	// Delete the token from Redis after successful use
+	redisConn.Del(ctx, req.Token)
+
+	// Generate JWT token for the user
+	jwtToken, err := middleware.GenerateToken(telegramUserID, telegramUserID, "user")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to generate auth token",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
+		"token":      jwtToken,
 		"id":         idStr,
 		"name":       name,
-		"time":       time,
 		"isNewUser":  isNewUser,
 		"registered": isNewUser,
+		"user": gin.H{
+			"id":              telegramUserID,
+			"telegramId":      telegramUserID,
+			"name":            name,
+			"role":            "participant",
+			"profileComplete": false,
+		},
 	})
 }
 

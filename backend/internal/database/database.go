@@ -50,7 +50,11 @@ func AutoMigrate() error {
 		&models.CaseItem{},
 		&models.Clothes{},
 		&models.Hackathon{},
-		&models.MatchCandidate{},
+		&models.HackathonParticipant{},
+		&models.Team{},
+		&models.TeamJoinRequest{},
+		&models.TeamInvite{},
+		&models.Swipe{},
 		&models.Match{},
 	)
 }

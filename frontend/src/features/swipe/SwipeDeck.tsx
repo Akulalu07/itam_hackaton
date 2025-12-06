@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TinderCard from 'react-tinder-card';
 import { 
@@ -10,11 +10,12 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  Users
+  Users,
+  RefreshCw
 } from 'lucide-react';
 import { User } from '../../types';
-import { dummyUsers } from '../../data/dummyData';
-import { useTeamStore } from '../../store/useStore';
+import { useSwipeStore, useTeamStore, useHackathonStore, useAuthStore } from '../../store/useStore';
+import { EmptyState } from '../../components/common';
 import { ROUTES } from '../../routes';
 
 // Skill level colors
@@ -70,7 +71,13 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
             <div className="relative">
               <div className="avatar">
                 <div className="w-20 h-20 rounded-2xl ring-2 ring-primary ring-offset-2 ring-offset-base-200">
-                  <img src={user.avatar} alt={user.name} />
+                  {user.avatar ? (
+                    <img src={user.avatar} alt={user.name} />
+                  ) : (
+                    <div className="bg-primary text-primary-content flex items-center justify-center text-2xl font-bold">
+                      {user.name?.charAt(0) || '?'}
+                    </div>
+                  )}
                 </div>
               </div>
               {/* Online indicator */}
@@ -88,12 +95,12 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
               <div className="flex items-center gap-3 mt-2">
                 <div className="flex items-center gap-1">
                   <Trophy className="w-4 h-4 text-warning" />
-                  <span className="text-sm font-semibold">{user.pts}</span>
+                  <span className="text-sm font-semibold">{user.pts || 0}</span>
                   <span className="text-xs text-base-content/60">PTS</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 text-secondary" />
-                  <span className="text-sm font-semibold">{user.mmr}</span>
+                  <span className="text-sm font-semibold">{user.mmr || 0}</span>
                   <span className="text-xs text-base-content/60">MMR</span>
                 </div>
               </div>
@@ -101,7 +108,7 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
           </div>
 
           {/* NFT Stickers */}
-          {user.nftStickers.length > 0 && (
+          {user.nftStickers && user.nftStickers.length > 0 && (
             <div className="flex gap-2 mt-3">
               {user.nftStickers.slice(0, 4).map(sticker => (
                 <div 
@@ -120,7 +127,7 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
         <div className="px-6 py-4">
           <h3 className="text-sm font-semibold text-base-content/70 mb-2">Навыки</h3>
           <div className="flex flex-wrap gap-2">
-            {user.skills.slice(0, expanded ? undefined : 4).map(skill => (
+            {user.skills && user.skills.slice(0, expanded ? undefined : 4).map(skill => (
               <span 
                 key={skill.id}
                 className={`badge ${skillLevelColors[skill.level]} badge-lg`}
@@ -128,10 +135,13 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
                 {skill.name}
               </span>
             ))}
-            {!expanded && user.skills.length > 4 && (
+            {!expanded && user.skills && user.skills.length > 4 && (
               <span className="badge badge-outline badge-lg">
                 +{user.skills.length - 4}
               </span>
+            )}
+            {(!user.skills || user.skills.length === 0) && (
+              <span className="text-sm text-base-content/50">Навыки не указаны</span>
             )}
           </div>
         </div>
@@ -146,7 +156,7 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
             {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
           <p className={`text-sm text-base-content/80 ${expanded ? '' : 'line-clamp-3'}`}>
-            {user.bio}
+            {user.bio || 'Пользователь пока не рассказал о себе'}
           </p>
         </div>
 
@@ -155,10 +165,7 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
           <div className="flex items-center gap-2">
             <span className="text-sm text-base-content/60">Опыт:</span>
             <span className="badge badge-primary badge-outline">
-              {user.experience === 'student' && 'Студент'}
-              {user.experience === 'junior' && 'Junior'}
-              {user.experience === 'middle' && 'Middle'}
-              {user.experience === 'senior' && 'Senior'}
+              {user.experience || 'Не указан'}
             </span>
           </div>
         </div>
@@ -184,29 +191,50 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
  */
 export function SwipeDeck() {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const { currentTeam } = useTeamStore();
+  const { selectedHackathon } = useHackathonStore();
+  const { 
+    deck, 
+    lastSwipedUser, 
+    isLoading, 
+    error, 
+    fetchDeck, 
+    swipe: performSwipe, 
+    undoLastSwipe,
+    resetDeck 
+  } = useSwipeStore();
   
-  // Use dummy data
-  const [deck, setDeck] = useState<User[]>([...dummyUsers].reverse());
-  const [lastSwipedUser, setLastSwipedUser] = useState<User | null>(null);
   const [swipeDirection, setSwipeDirection] = useState<string | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
   
   const currentIndex = deck.length - 1;
   const cardRefs = useRef<(any)[]>([]);
 
-  // Swipe handlers
-  const handleSwipe = useCallback((direction: string, user: User) => {
-    setLastSwipedUser(user);
-    setSwipeDirection(direction);
-    
-    if (direction === 'right') {
-      // Show invite sent feedback
-      console.log('Invite sent to:', user.name);
-    }
-  }, []);
+  // Загрузка колоды при монтировании
+  useEffect(() => {
+    const hackathonId = selectedHackathon?.id || user?.currentHackathonId;
+    fetchDeck(hackathonId);
+  }, [fetchDeck, selectedHackathon?.id, user?.currentHackathonId]);
 
-  const handleCardLeftScreen = useCallback((userId: string) => {
-    setDeck(prev => prev.filter(u => u.id !== userId));
+  // Swipe handlers
+  const handleSwipe = useCallback(async (direction: string, swipedUser: User) => {
+    setSwipeDirection(direction);
+    setToastVisible(true);
+    
+    // Скрыть toast через 2 секунды
+    setTimeout(() => {
+      setToastVisible(false);
+      setSwipeDirection(null);
+    }, 2000);
+    
+    // Отправить свайп на сервер
+    const swipeDir = direction === 'right' ? 'right' : 'left';
+    await performSwipe(swipedUser.id, swipeDir);
+  }, [performSwipe]);
+
+  const handleCardLeftScreen = useCallback((_userId: string) => {
+    // Карточка уже удалена из стора при свайпе
   }, []);
 
   // Manual swipe buttons
@@ -221,38 +249,84 @@ export function SwipeDeck() {
   }, [currentIndex]);
 
   // Undo last swipe
-  const undoSwipe = useCallback(() => {
-    if (!lastSwipedUser) return;
-    setDeck(prev => [...prev, lastSwipedUser]);
-    setLastSwipedUser(null);
-    setSwipeDirection(null);
-  }, [lastSwipedUser]);
+  const handleUndo = useCallback(async () => {
+    await undoLastSwipe();
+  }, [undoLastSwipe]);
 
-  // Empty state
+  // Refresh deck
+  const handleRefresh = useCallback(() => {
+    const hackathonId = selectedHackathon?.id || user?.currentHackathonId;
+    resetDeck();
+    fetchDeck(hackathonId);
+  }, [fetchDeck, resetDeck, selectedHackathon?.id, user?.currentHackathonId]);
+
+  // Loading state
+  if (isLoading && deck.length === 0) {
+    return (
+      <div className="min-h-screen bg-base-100 flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg text-primary" />
+      </div>
+    );
+  }
+
+  // Error state
+  if (error && deck.length === 0) {
+    return (
+      <div className="min-h-screen bg-base-100 flex items-center justify-center p-6">
+        <EmptyState
+          icon="⚠️"
+          title="Ошибка загрузки"
+          description={error}
+          actionText="Повторить"
+          onAction={handleRefresh}
+        />
+      </div>
+    );
+  }
+
+  // Empty state - no candidates
   if (deck.length === 0) {
     return (
-      <div className="min-h-screen bg-base-100 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-24 h-24 bg-base-200 rounded-full flex items-center justify-center mb-6">
-          <Users className="w-12 h-12 text-base-content/30" />
+      <div className="min-h-screen bg-base-100 flex flex-col">
+        {/* Header */}
+        <div className="px-4 py-3 bg-base-200/50 backdrop-blur-lg sticky top-0 z-20">
+          <div className="flex items-center justify-between max-w-lg mx-auto">
+            <div>
+              <h1 className="font-bold">{currentTeam?.name || 'Поиск тиммейтов'}</h1>
+              <p className="text-sm text-base-content/60">0 кандидатов</p>
+            </div>
+            <button 
+              onClick={handleRefresh}
+              disabled={isLoading}
+              className="btn btn-ghost btn-sm btn-circle"
+            >
+              <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
-        <h2 className="text-xl font-bold mb-2">Все кандидаты просмотрены!</h2>
-        <p className="text-base-content/60 mb-6">
-          Ты просмотрел всех доступных участников. Проверь свою команду или подожди новых участников.
-        </p>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => setDeck([...dummyUsers].reverse())}
-            className="btn btn-outline"
-          >
-            <Undo2 className="w-4 h-4" />
-            Начать заново
-          </button>
-          <button 
-            onClick={() => navigate(ROUTES.MY_TEAM)}
-            className="btn btn-primary"
-          >
-            Моя команда
-          </button>
+
+        {/* Empty State */}
+        <div className="flex-1 flex items-center justify-center p-6">
+          <EmptyState
+            icon="🔍"
+            title="Все кандидаты просмотрены!"
+            description="Ты просмотрел всех доступных участников. Проверь свою команду или подожди новых участников."
+            actionText="Обновить"
+            onAction={handleRefresh}
+          />
+        </div>
+
+        {/* Bottom Actions */}
+        <div className="p-4 bg-base-100">
+          <div className="max-w-lg mx-auto">
+            <button 
+              onClick={() => navigate(ROUTES.MY_TEAM)}
+              className="btn btn-primary w-full"
+            >
+              <Users className="w-4 h-4" />
+              Моя команда
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -301,7 +375,7 @@ export function SwipeDeck() {
         <div className="flex items-center justify-center gap-6 max-w-lg mx-auto">
           {/* Undo Button */}
           <button
-            onClick={undoSwipe}
+            onClick={handleUndo}
             disabled={!lastSwipedUser}
             className="btn btn-circle btn-lg btn-ghost border-2 border-base-300 disabled:opacity-30"
           >
@@ -342,13 +416,13 @@ export function SwipeDeck() {
       </div>
 
       {/* Swipe Feedback Toast */}
-      {swipeDirection && (
+      {toastVisible && swipeDirection && lastSwipedUser && (
         <div className="toast toast-top toast-center z-50">
           <div className={`alert ${swipeDirection === 'right' ? 'alert-success' : 'alert-error'}`}>
             <span>
               {swipeDirection === 'right' 
-                ? `✓ Приглашение отправлено ${lastSwipedUser?.name}` 
-                : `✗ Пропущен ${lastSwipedUser?.name}`
+                ? `✓ Приглашение отправлено ${lastSwipedUser.name}` 
+                : `✗ Пропущен ${lastSwipedUser.name}`
               }
             </span>
           </div>

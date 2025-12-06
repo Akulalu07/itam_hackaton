@@ -1,29 +1,95 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, Sparkles, Users, Trophy } from 'lucide-react';
 import { useAuthStore } from '../../store/useStore';
+import { useInitTelegramAuth } from '../../store/apiHooks';
+import { isTelegramWebApp, getTelegramInitData, initTelegramWebApp } from '../../api';
 import { ROUTES } from '../../routes';
 
 /**
  * LoginScreen - Экран входа с кнопкой "Войти через Telegram"
  * Mobile-first дизайн с градиентным фоном
+ * 
+ * При загрузке внутри Telegram WebApp - автоматически авторизуется
  */
 export function LoginScreen() {
   const navigate = useNavigate();
-  const { loginWithTelegram, isLoading } = useAuthStore();
+  const { loginWithTelegram, isLoading, isAuthenticated } = useAuthStore();
+  const { initAuth } = useInitTelegramAuth();
   const [isAnimating, setIsAnimating] = useState(false);
+  const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
+
+  // Автоматический вход через Telegram WebApp
+  useEffect(() => {
+    const attemptAutoLogin = async () => {
+      // Проверяем, запущено ли внутри Telegram
+      if (!isTelegramWebApp()) {
+        console.log('Not in Telegram WebApp, showing manual login');
+        setAutoLoginAttempted(true);
+        return;
+      }
+
+      // Инициализируем Telegram WebApp
+      initTelegramWebApp();
+
+      // Получаем initData
+      const initData = getTelegramInitData();
+      if (!initData) {
+        console.log('No initData available');
+        setAutoLoginAttempted(true);
+        return;
+      }
+
+      setIsAnimating(true);
+      
+      try {
+        // Пробуем авторизоваться через API
+        const success = await initAuth();
+        
+        if (success) {
+          // Успешно - переходим к профилю
+          navigate(ROUTES.PROFILE_EDIT, { replace: true });
+        } else {
+          // Фоллбэк на mock логин
+          console.log('API auth failed, using mock login');
+          await loginWithTelegram();
+          navigate(ROUTES.PROFILE_EDIT, { replace: true });
+        }
+      } catch (error) {
+        console.error('Auto-login failed:', error);
+        // Фоллбэк на ручной вход
+        setIsAnimating(false);
+      } finally {
+        setAutoLoginAttempted(true);
+      }
+    };
+
+    if (!autoLoginAttempted && !isAuthenticated) {
+      attemptAutoLogin();
+    }
+  }, [autoLoginAttempted, isAuthenticated, initAuth, loginWithTelegram, navigate]);
+
+  // Если уже авторизованы - редиректим
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(ROUTES.PROFILE_EDIT, { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleTelegramLogin = async () => {
-    setIsAnimating(true);
+    // Если внутри Telegram WebApp - пробуем автоматическую авторизацию
+    if (isTelegramWebApp()) {
+      setIsAnimating(true);
+      const success = await initAuth();
+      if (success) {
+        navigate(ROUTES.PROFILE_EDIT, { replace: true });
+        return;
+      }
+      setIsAnimating(false);
+    }
     
-    // Mock Telegram OAuth
-    await loginWithTelegram({
-      id: 'tg-' + Date.now(),
-      name: 'Участник ' + Math.floor(Math.random() * 1000),
-    });
-    
-    // Navigate to profile setup after login
-    navigate(ROUTES.PROFILE_EDIT, { replace: true });
+    // Иначе - переходим на страницу авторизации через токен
+    navigate(ROUTES.TOKEN_AUTH);
   };
 
   return (

@@ -10,18 +10,14 @@ import { Loader2 } from 'lucide-react';
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { loginWithTelegram, isLoading } = useAuthStore();
+  const { isLoading } = useAuthStore();
   const { theme } = useUIStore();
   
   const from = location.state?.from?.pathname || ROUTES.DASHBOARD;
 
-  const handleTelegramLogin = async () => {
-    // Mock Telegram login
-    await loginWithTelegram({
-      id: 'tg-' + Date.now(),
-      name: 'Пользователь ' + Math.floor(Math.random() * 1000),
-    });
-    navigate(from, { replace: true });
+  const handleTelegramLogin = () => {
+    // Переходим на страницу авторизации через токен
+    navigate(ROUTES.TOKEN_AUTH, { state: { from } });
   };
 
   return (
