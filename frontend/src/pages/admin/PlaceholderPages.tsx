@@ -1,23 +1,12 @@
 import { PlaceholderPage } from '../../components/common/PlaceholderPage';
+import { HackathonManager, UserTable, AnalyticsDashboard } from '../../features/admin';
 
 export function AdminDashboardPage() {
-  return (
-    <PlaceholderPage 
-      title="Админ дашборд"
-      description="Общая статистика и управление"
-      icon="📊"
-    />
-  );
+  return <AnalyticsDashboard />;
 }
 
 export function AdminHackathonsPage() {
-  return (
-    <PlaceholderPage 
-      title="Управление хакатонами"
-      description="Создание и редактирование хакатонов"
-      icon="📅"
-    />
-  );
+  return <HackathonManager />;
 }
 
 export function AdminHackathonCreatePage() {
@@ -41,13 +30,7 @@ export function AdminHackathonEditPage() {
 }
 
 export function AdminParticipantsPage() {
-  return (
-    <PlaceholderPage 
-      title="Участники"
-      description="Список всех зарегистрированных участников"
-      icon="👥"
-    />
-  );
+  return <UserTable />;
 }
 
 export function AdminTeamsPage() {
@@ -61,11 +44,5 @@ export function AdminTeamsPage() {
 }
 
 export function AdminAnalyticsPage() {
-  return (
-    <PlaceholderPage 
-      title="Аналитика"
-      description="Графики и статистика"
-      icon="📈"
-    />
-  );
+  return <AnalyticsDashboard />;
 }
