@@ -230,3 +230,7 @@ CREATE TABLE IF NOT EXISTS hackathon_winners (
 
 CREATE INDEX idx_hackathon_winners_hackathon_id ON hackathon_winners(hackathon_id);
 
+
+
+
+

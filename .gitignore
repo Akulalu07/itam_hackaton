@@ -6,3 +6,5 @@ tgbot/target
 backend/go.sum
 backend/go.mod
 backend/backend
+.idea   
+backend/.idea

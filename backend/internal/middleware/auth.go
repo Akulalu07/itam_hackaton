@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type AuthContext struct {
@@ -16,7 +17,10 @@ type AuthContext struct {
 
 const AuthContextKey = "auth_context"
 
-func RequireAuth() gin.HandlerFunc {
+// RequireAuth — проверяет Telegram ID + достаёт юзера
+func RequireAuth(db *gorm.DB) gin.HandlerFunc {
+	userRepo := repositories.NewUserRepository(db)
+
 	return func(c *gin.Context) {
 		telegramUserIDStr := c.GetHeader("X-Telegram-User-ID")
 		if telegramUserIDStr == "" {
@@ -36,7 +40,6 @@ func RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		userRepo := repositories.NewUserRepository()
 		user, err := userRepo.GetByTelegramID(c.Request.Context(), telegramUserID)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
@@ -50,42 +53,38 @@ func RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		authCtx := &AuthContext{
+		c.Set(AuthContextKey, &AuthContext{
 			UserID: user.ID,
 			Role:   user.Role,
-		}
+		})
 
-		c.Set(AuthContextKey, authCtx)
 		c.Next()
 	}
 }
 
-func RequireRole(requiredRole string) gin.HandlerFunc {
+// RequireRole — RBAC
+func RequireRole(required models.UserRole) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authCtx, exists := c.Get(AuthContextKey)
-		if !exists {
+		auth, ok := GetAuthContext(c)
+		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			c.Abort()
 			return
 		}
 
-		ctx := authCtx.(*AuthContext)
-
-		hasPermission := false
-		requiredRoleEnum := models.UserRole(requiredRole)
-		switch requiredRoleEnum {
+		switch required {
 		case models.RoleAdmin:
-			hasPermission = ctx.Role == models.RoleAdmin
+			if auth.Role != models.RoleAdmin {
+				c.JSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+				c.Abort()
+				return
+			}
 		case models.RoleHackathonCreator:
-			hasPermission = ctx.Role == models.RoleAdmin || ctx.Role == models.RoleHackathonCreator
-		case models.RoleUser:
-			hasPermission = true // All authenticated users
-		}
-
-		if !hasPermission {
-			c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
-			c.Abort()
-			return
+			if auth.Role != models.RoleAdmin && auth.Role != models.RoleHackathonCreator {
+				c.JSON(http.StatusForbidden, gin.H{"error": "hackathon_creator role required"})
+				c.Abort()
+				return
+			}
 		}
 
 		c.Next()
@@ -93,9 +92,9 @@ func RequireRole(requiredRole string) gin.HandlerFunc {
 }
 
 func GetAuthContext(c *gin.Context) (*AuthContext, bool) {
-	authCtx, exists := c.Get(AuthContextKey)
-	if !exists {
+	auth, ok := c.Get(AuthContextKey)
+	if !ok {
 		return nil, false
 	}
-	return authCtx.(*AuthContext), true
+	return auth.(*AuthContext), true
 }

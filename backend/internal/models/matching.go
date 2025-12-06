@@ -3,18 +3,19 @@ package models
 import "time"
 
 type Swipe struct {
-	ID           int64     `json:"id"`
-	SwiperTeamID int64     `json:"swiperTeamId"`
-	TargetUserID int64     `json:"targetUserId"`
-	Action       string    `json:"action"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID           int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	SwiperTeamID int64  `gorm:"index" json:"swiperTeamId"`
+	TargetUserID int64  `gorm:"index" json:"targetUserId"`
+	Action       string `gorm:"type:varchar(20)" json:"action"`
+
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
 }
 
 type Match struct {
-	ID        int64     `json:"id"`
-	TeamID    int64     `json:"teamId"`
-	UserID    int64     `json:"userId"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	TeamID    int64     `gorm:"index" json:"teamId"`
+	UserID    int64     `gorm:"index" json:"userId"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
 }
 
 type MatchCandidate struct {
