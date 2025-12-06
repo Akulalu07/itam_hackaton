@@ -1,20 +1,17 @@
-use teloxide::{prelude::*, types::ParseMode, utils::command::BotCommands};
-use rand::{thread_rng, Rng};
-use rand::distributions::Alphanumeric;
 use chrono::Local;
+use rand::distributions::Alphanumeric;
+use rand::{Rng, thread_rng};
 use redis::AsyncCommands;
 use redis::streams::StreamReadOptions;
-use std::env;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::env;
+use std::sync::Arc;
+use teloxide::{prelude::*, types::ParseMode, utils::command::BotCommands};
+use tokio::sync::Mutex;
 
 #[derive(BotCommands, Clone)]
-#[command(
-    rename_rule = "lowercase",
-    description = "Доступные команды:"
-)]
+#[command(rename_rule = "lowercase", description = "Доступные команды:")]
 enum Command {
     #[command(description = "получить логин-токен")]
     Login,
@@ -65,13 +62,11 @@ struct AuthorizedUser {
 
 #[tokio::main]
 async fn main() {
-    println!("=== TG Bot Starting ===");
     dotenvy::dotenv().ok();
-    
+
     // Initialize logger
-    std::env::set_var("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()));
     pretty_env_logger::init();
-    
+
     println!("Logger initialized");
     log::info!("Starting bot..");
 
@@ -80,7 +75,7 @@ async fn main() {
     println!("Creating bot from env...");
     let bot = Bot::from_env();
     println!("Bot created successfully");
-    
+
     let bot_clone = bot.clone();
     let onboarding_state_clone = onboarding_state.clone();
     tokio::spawn(async move {
@@ -91,19 +86,14 @@ async fn main() {
 
     let onboarding_state_for_cmd = onboarding_state.clone();
     let onboarding_state_for_text = onboarding_state.clone();
-    let handler = dptree::entry()
-        .branch(Update::filter_message().filter_command::<Command>().endpoint(move |bot: Bot, msg: Message, cmd: Command| {
-            let state = onboarding_state_for_cmd.clone();
-            answer(bot, msg, cmd, state)
-        }))
-        .branch(
-            Update::filter_message()
-                .filter(|msg: Message| msg.text().is_some())
-                .endpoint(move |bot: Bot, msg: Message| {
-                    let state = onboarding_state_for_text.clone();
-                    handle_text_message(bot, msg, state)
-                })
-        );
+    let handler = dptree::entry().branch(
+        Update::filter_message()
+            .filter_command::<Command>()
+            .endpoint(move |bot: Bot, msg: Message, cmd: Command| {
+                let state = onboarding_state_for_cmd.clone();
+                answer(bot, msg, cmd, state)
+            }),
+    );
 
     Dispatcher::builder(bot, handler)
         .enable_ctrlc_handler()
@@ -134,43 +124,11 @@ async fn answer(
                 .parse_mode(ParseMode::MarkdownV2)
                 .await?;
 
-            bot.send_message(msg.chat.id, "Используйте этот токен для авторизации на сайте")
-                .await?;
-        }
-    }
-
-    Ok(())
-}
-
-async fn handle_text_message(
-    bot: Bot,
-    msg: Message,
-    onboarding_state: OnboardingStateMap,
-) -> ResponseResult<()> {
-    let user_id_u64 = msg.from().map(|u| u.id.0).unwrap_or(0);
-    let user_id = user_id_u64 as i64;
-    let text = msg.text().unwrap_or("");
-
-    let mut state_map = onboarding_state.lock().await;
-    
-    if let Some(data) = state_map.get_mut(&user_id) {
-        match data.state {
-            OnboardingState::WaitingForName => {
-                data.name = Some(text.to_string());
-                data.state = OnboardingState::WaitingForEmail;
-                bot.send_message(msg.chat.id, "Отлично! Теперь введите ваш email:")
-                    .await?;
-                return Ok(());
-            }
-            OnboardingState::WaitingForEmail => {
-                data.email = Some(text.to_string());
-                data.state = OnboardingState::Completed;
-                bot.send_message(msg.chat.id, "Спасибо! Регистрация завершена. Добро пожаловать!")
-                    .await?;
-                state_map.remove(&user_id);
-                return Ok(());
-            }
-            _ => {}
+            bot.send_message(
+                msg.chat.id,
+                "Используйте этот токен для авторизации на сайте",
+            )
+            .await?;
         }
     }
 
@@ -191,7 +149,8 @@ async fn generate_unique_token(
         if !exists {
             let user_id_u64 = msg.from().map(|u| u.id.0).unwrap_or(0);
             let user_id = user_id_u64 as i64;
-            let username = msg.from()
+            let username = msg
+                .from()
                 .and_then(|u| u.username.clone())
                 .unwrap_or_else(|| "-".into());
 
@@ -212,11 +171,14 @@ async fn generate_unique_token(
 
             if is_new_user {
                 let mut state_map = onboarding_state.lock().await;
-                state_map.insert(user_id, OnboardingData {
-                    state: OnboardingState::WaitingForName,
-                    name: None,
-                    email: None,
-                });
+                state_map.insert(
+                    user_id,
+                    OnboardingData {
+                        state: OnboardingState::WaitingForName,
+                        name: None,
+                        email: None,
+                    },
+                );
                 drop(state_map);
             }
 
@@ -225,7 +187,10 @@ async fn generate_unique_token(
     }
 }
 
-async fn register_user_in_backend(telegram_user_id: i64, username: &str) -> anyhow::Result<RegisterUserResponse> {
+async fn register_user_in_backend(
+    telegram_user_id: i64,
+    username: &str,
+) -> anyhow::Result<RegisterUserResponse> {
     let backend_url = env::var("BACKEND_URL").unwrap_or_else(|_| "http://backend:8080".to_string());
     let url = format!("{}/api/user/register", backend_url);
 
@@ -235,15 +200,15 @@ async fn register_user_in_backend(telegram_user_id: i64, username: &str) -> anyh
         username: username.to_string(),
     };
 
-    let response = client
-        .post(&url)
-        .json(&payload)
-        .send()
-        .await?;
+    let response = client.post(&url).json(&payload).send().await?;
 
     if response.status().is_success() {
         let resp: RegisterUserResponse = response.json().await?;
-        log::info!("User registered: {} (new: {:?})", telegram_user_id, resp.is_new_user);
+        log::info!(
+            "User registered: {} (new: {:?})",
+            telegram_user_id,
+            resp.is_new_user
+        );
         Ok(resp)
     } else {
         let status = response.status();
@@ -251,7 +216,6 @@ async fn register_user_in_backend(telegram_user_id: i64, username: &str) -> anyh
         Err(anyhow::anyhow!("Backend returned {}: {}", status, text))
     }
 }
-
 
 async fn consume_notifications_stream(
     bot: Bot,
@@ -262,7 +226,6 @@ async fn consume_notifications_stream(
     let stream_name = "notifications";
     let consumer_group = "telegram_bot";
     let consumer_name = "consumer_1";
-
 
     let _: Result<(), _> = redis.xgroup_create(stream_name, consumer_group, "0").await;
     log::info!("Consumer group creation attempted (will retry when stream exists if needed)");
@@ -275,20 +238,24 @@ async fn consume_notifications_stream(
             .count(10);
 
         match redis
-            .xread_options::<&str, &str, redis::streams::StreamReadReply>(&[stream_name], &[">"], &opts)
+            .xread_options::<&str, &str, redis::streams::StreamReadReply>(
+                &[stream_name],
+                &[">"],
+                &opts,
+            )
             .await
         {
             Ok(streams) => {
                 if streams.keys.is_empty() {
                     continue;
                 }
-                
+
                 log::info!("Received {} stream keys", streams.keys.len());
                 for stream_key in streams.keys {
                     log::info!("Processing {} messages from stream", stream_key.ids.len());
                     for stream_id in stream_key.ids {
                         log::debug!("Processing message ID: {}", stream_id.id);
-                        
+
                         let mut data: HashMap<String, String> = HashMap::new();
                         for (key, value) in stream_id.map {
                             if let Ok(str_val) = redis::from_redis_value::<String>(&value) {
@@ -297,17 +264,21 @@ async fn consume_notifications_stream(
                                 log::warn!("Failed to convert value for key: {}", key);
                             }
                         }
-                        
+
                         if let Some(json_data) = data.get("data") {
                             log::debug!("Parsing notification data: {}", json_data);
-                            if let Ok(notification) = serde_json::from_str::<serde_json::Value>(json_data) {
-                                let message = notification.get("message")
+                            if let Ok(notification) =
+                                serde_json::from_str::<serde_json::Value>(json_data)
+                            {
+                                let message = notification
+                                    .get("message")
                                     .and_then(|m| m.as_str())
                                     .unwrap_or("Новое уведомление");
 
                                 log::info!("Sending notification: {}", message);
-                                
-                                if let Err(e) = send_notification_to_all_users(&bot, message).await {
+
+                                if let Err(e) = send_notification_to_all_users(&bot, message).await
+                                {
                                     log::error!("Error sending notifications: {}", e);
                                 }
                             } else {
@@ -326,17 +297,27 @@ async fn consume_notifications_stream(
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("NOGROUP") {
-                    log::debug!("Stream or consumer group doesn't exist yet, attempting to create consumer group...");
-                    match redis.xgroup_create::<&str, &str, &str, ()>(stream_name, consumer_group, "0").await {
+                    log::debug!(
+                        "Stream or consumer group doesn't exist yet, attempting to create consumer group..."
+                    );
+                    match redis
+                        .xgroup_create::<&str, &str, &str, ()>(stream_name, consumer_group, "0")
+                        .await
+                    {
                         Ok(_) => {
-                            log::info!("Successfully created consumer group {} (stream now exists)", consumer_group);
+                            log::info!(
+                                "Successfully created consumer group {} (stream now exists)",
+                                consumer_group
+                            );
                         }
                         Err(create_err) => {
                             let create_err_str = create_err.to_string();
                             if create_err_str.contains("BUSYGROUP") {
                                 log::debug!("Consumer group already exists");
                             } else {
-                                log::debug!("Stream doesn't exist yet, waiting for first notification...");
+                                log::debug!(
+                                    "Stream doesn't exist yet, waiting for first notification..."
+                                );
                             }
                         }
                     }
@@ -376,22 +357,34 @@ async fn send_notification_to_all_users(bot: &Bot, message: &str) -> anyhow::Res
                 return Err(anyhow::anyhow!("Failed to parse users: {}", e));
             }
         };
-        
+
         log::info!("Found {} authorized users", users_resp.users.len());
-        
+
         if users_resp.users.is_empty() {
             log::warn!("No authorized users found to send notifications to");
             return Ok(());
         }
-        
+
         for user in users_resp.users {
             if user.authorized {
                 let chat_id = ChatId(user.telegram_user_id);
-                log::debug!("Sending notification to user {} (chat_id: {:?})", user.telegram_user_id, chat_id);
+                log::debug!(
+                    "Sending notification to user {} (chat_id: {:?})",
+                    user.telegram_user_id,
+                    chat_id
+                );
                 if let Err(e) = bot.send_message(chat_id, message).await {
-                    log::error!("Failed to send notification to user {}: {}", user.telegram_user_id, e);
+                    log::error!(
+                        "Failed to send notification to user {}: {}",
+                        user.telegram_user_id,
+                        e
+                    );
                 } else {
-                    log::info!("✓ Notification sent to user {} ({})", user.telegram_user_id, user.username);
+                    log::info!(
+                        "✓ Notification sent to user {} ({})",
+                        user.telegram_user_id,
+                        user.username
+                    );
                 }
             } else {
                 log::debug!("Skipping user {} (not authorized)", user.telegram_user_id);
@@ -403,29 +396,24 @@ async fn send_notification_to_all_users(bot: &Bot, message: &str) -> anyhow::Res
         log::error!("Failed to get authorized users: {} - {}", status, text);
         return Err(anyhow::anyhow!("Backend returned {}: {}", status, text));
     }
-    
-    Ok(())
-}
 
-fn random_string() -> String {
-    let mut rng = thread_rng();
-    (0..16)
-        .map(|_| rng.sample(Alphanumeric) as char)
-        .collect()
+    Ok(())
 }
 
 async fn create_redis_conn() -> anyhow::Result<redis::aio::MultiplexedConnection> {
     let addr = env::var("REDISADDR").unwrap_or_else(|_| "redis:6379".to_string());
     let username = env::var("REDISUSER").ok();
     let password = env::var("REDISPASSWORD").ok();
-
     let url = match (username, password) {
         (Some(u), Some(p)) => format!("redis://{}:{}@{}", u, p, addr),
         _ => format!("redis://{}", addr),
     };
-
     let client = redis::Client::open(url)?;
     let conn = client.get_multiplexed_async_connection().await?;
-
     Ok(conn)
+}
+
+fn random_string() -> String {
+    let mut rng = thread_rng();
+    (0..16).map(|_| rng.sample(Alphanumeric) as char).collect()
 }

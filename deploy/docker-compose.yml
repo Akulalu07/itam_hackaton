@@ -1,18 +1,9 @@
-# ============================================
-# ITAM Courses Hack - Production Docker Compose
-# ============================================
-# Run: docker-compose up --build -d
-# ============================================
-
 services:
-  # ============================================
-  # DATABASE - PostgreSQL
-  # ============================================
   postgres:
-    image: postgres:17-alpine
-    container_name: itam-postgres
+    image: postgres:17
+    container_name: postgres
     ports:
-      - '5432:5432'
+      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -22,133 +13,65 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro
       - ./local/migrations:/docker-entrypoint-initdb.d/migrations:ro
     networks:
-      - itam-network
+      - default
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-itam_hackaton}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
-  # ============================================
-  # CACHE
-  # ============================================
   redis:
-    image: redis:8-alpine
-    container_name: itam-redis
+    image: redis:8.4.0
+    container_name: redis
     ports:
-      - '6379:6379'
+      - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
     networks:
-      - itam-network
+      - default
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
+    restart: unless-stoppeds
 
-  # ============================================
-  # BACKEND - Go API Server
-  # ============================================
   backend:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    image: itam-hackaton-backend:latest
-    container_name: itam-backend
-    expose:
-      - "8080"
-    environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-itam_hackaton}?sslmode=disable
-      - REDIS_URL=redis://redis:6379
-      - REDISADDR=redis:6379
-      - REDISUSER=${REDIS_USER:-}
-      - REDISPASSWORD=${REDIS_PASSWORD:-}
-      - JWT_SECRET=${JWT_SECRET:-itam-hackaton-secret-change-in-production}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - ADMINUSER=${ADMIN_USER:-admin@itam.courses}
-      - ADMINPASS=${ADMIN_PASS:-admin123}
-      - PORT=8080
-      - GIN_MODE=release
+    image: ghcr.io/akulalu07/itam_hackaton-backend:latest
+    container_name: backend
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-    networks:
-      - itam-network
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    restart: unless-stopped
+        condition: service_started
 
-  # ============================================
-  # FRONTEND - React SPA with Nginx Reverse Proxy
-  # ============================================
-  # CRITICAL: Nginx serves as reverse proxy
-  # - / → React SPA (try_files for React Router)
-  # - /api/* → Backend (proxy_pass to backend:8080)
-  # This eliminates CORS issues!
-  # ============================================
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    image: itam-hackaton-frontend:latest
-    container_name: itam-frontend
-    ports:
-      - '80:80'
-      - '443:443'
-    depends_on:
-      - backend
-    networks:
-      - itam-network
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-    restart: unless-stopped
-
-  # ============================================
-  # TELEGRAM BOT (Rust)
-  # ============================================
   tgbot:
-    build:
-      context: ../tgbot
-      dockerfile: Dockerfile
-    image: itam-hackaton-tgbot:latest
-    container_name: itam-tgbot
-    init: true
+    image: ghcr.io/akulalu07/itam_hackaton-tgbot:latest
+    container_name: tgbot
+    env_file: .env
     environment:
-      - RUST_LOG=info
-      - REDISADDR=redis:6379
-      - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:-}
+      TELOXIDE_TOKEN: ${TELOXIDE_TOKEN}
+    restart: unless-stopped
     depends_on:
       - redis
+
+  frontend:
+    image: ghcr.io/akulalu07/itam_hackaton-frontend:latest
+    container_name: frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
       - backend
-    networks:
-      - itam-network
-    restart: unless-stopped
+      - tgbot
 
-# ============================================
-# NETWORKS
-# ============================================
-networks:
-  itam-network:
-    driver: bridge
-    name: itam-hackaton-network
-
-# ============================================
-# VOLUMES - Persistent Data
-# ============================================
 volumes:
   redis_data:
   postgres_data:
