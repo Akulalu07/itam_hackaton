@@ -2,43 +2,71 @@ package handlers
 
 import (
 	"backend/internal/database"
-	"context"
+	"backend/internal/repositories"
+	"backend/internal/services"
 	"fmt"
 	"os"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"gorm.io/gorm"
 )
 
-var REDISUSER string
-var REDISPASS string
-var REDISADDR string
-
-var ADMINUSER string
-var ADMINPASS string
-
 var redisConn *redis.Client
-var ctx = context.Background()
 
-func Start_server() {
+var (
+	ADMINUSER string
+	ADMINPASS string
+)
+
+type Server struct {
+	DB                  *gorm.DB
+	UserRepo            *repositories.UserRepository
+	NotificationService *services.NotificationService
+}
+
+func StartServer() {
 	r := gin.Default()
-	LoadEnv()
+	r.Use(cors.Default())
+	loadEnv()
 
-	if err := database.Connect(); err != nil {
-		panic(fmt.Sprintf("Failed to connect to PostgreSQL: %v", err))
+	// --- Connect PostgreSQL ---
+	db, err := database.Connect()
+	if err != nil {
+		panic(fmt.Sprintf("failed to connect PostgreSQL: %v", err))
 	}
-	defer database.Close()
 
-	connectToRedis()
-	defer redisConn.Close()
+	// Auto-migrate
+	if err := database.AutoMigrate(db); err != nil {
+		panic(fmt.Sprintf("failed auto-migrate: %v", err))
+	}
 
-	r.POST("/api/token", takeToken)
-	r.POST("/api/user/register", registerUser)
-	r.GET("/api/users/authorized", getAuthorizedUsers)
-	r.POST("/api/notification", sendNotification)
-	r.POST("/admin/api/login", adminLogin)
+	// --- Connect Redis ---
+	redisConn = connectToRedis()
+	notificationService := services.NewNotificationService(redisConn)
+
+	server := &Server{
+		DB:                  db,
+		UserRepo:            repositories.NewUserRepository(db),
+		NotificationService: notificationService,
+	}
+
+	// PUBLIC ROUTES
+	r.POST("/api/auth/telegram", server.AuthTelegram)
+	r.POST("/admin/api/login", server.AdminLogin)
+
+	// USER ROUTES
+	r.GET("/api/users/me", server.GetMe)
+	r.PATCH("/api/users/me/profile", server.UpdateProfile)
+	r.GET("/api/users/:id", server.GetUser)
+	r.POST("/api/notification", server.SendNotification)
+
+	// ADMIN — promote to hackathon creator
+	r.POST("/api/admin/promote", server.AdminPromoteToCreator)
+
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	if err := r.Run("0.0.0.0:8080"); err != nil {
@@ -46,34 +74,30 @@ func Start_server() {
 	}
 }
 
-func connectToRedis() {
-	redisConn = redis.NewClient(&redis.Options{
-		Addr:     REDISADDR,
-		Username: REDISUSER,
-		Password: REDISPASS,
+func loadEnv() {
+	ADMINUSER = getEnv("ADMINUSER", "admin")
+	ADMINPASS = getEnv("ADMINPASS", "admin")
+}
+
+func getEnv(key, def string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	return v
+}
+
+// ---------------------- REDIS ----------------------
+
+func connectToRedis() *redis.Client {
+	client := redis.NewClient(&redis.Options{
+		Addr:     getEnv("REDISADDR", "redis:6379"),
+		Username: getEnv("REDISUSER", "admin"),
+		Password: getEnv("REDISPASSWORD", "some_pass"),
 		DB:       0,
 	})
-
-	_, err := redisConn.Ping(ctx).Result()
-	if err != nil {
-		panic(fmt.Sprintf("err with connect to redis; err %s", err))
+	if err := client.Ping(client.Context()).Err(); err != nil {
+		panic("Failed to connect Redis: " + err.Error())
 	}
-	fmt.Println("Successfully connected to Redis")
-}
-
-func LoadEnv() {
-	REDISUSER = getFromEnv("REDISUSER", "admin")
-	REDISPASS = getFromEnv("REDISPASSWORD", "some_pass")
-	REDISADDR = getFromEnv("REDISADDR", "redis:6379")
-	ADMINUSER = getFromEnv("ADMINUSER", "admin")
-	ADMINPASS = getFromEnv("ADMINPASS", "admin")
-}
-
-func getFromEnv(variadle string, defaultVariable string) string {
-	variab := os.Getenv(variadle)
-	if variab == "" {
-		variab = defaultVariable
-	}
-	fmt.Printf("%s:%s\n", variadle, variab)
-	return variab
+	return client
 }

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Build stage
 FROM node:20-alpine AS builder
 
@@ -33,3 +34,19 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]
+=======
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci || npm install
+
+COPY . .
+RUN npm run build
+
+RUN npm i -g serve
+
+EXPOSE 3000
+CMD ["serve", "-s", "build", "-l", "3000"]
+>>>>>>> 83ee9a05a2da3ac6dfcfead26f297207538bab99

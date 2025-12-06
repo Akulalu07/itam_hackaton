@@ -1,129 +1,114 @@
 package database
 
 import (
+	"backend/internal/models"
 	"context"
-	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 
-	_ "github.com/lib/pq"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-var DB *sql.DB
+var DB *gorm.DB
 
-type User struct {
-	TelegramUserID int64
-	Username       string
-	Authorized     bool
-	CreatedAt      string
-}
+func Connect() (*gorm.DB, error) {
+	host := getEnv("POSTGRES_HOST", "postgres")
+	port := getEnv("POSTGRES_PORT", "5432")
+	user := getEnv("POSTGRES_USER", "postgres")
+	pass := getEnv("POSTGRES_PASSWORD", "postgres")
+	dbname := getEnv("POSTGRES_DB", "itam_hackaton")
 
-func Connect() error {
-	host := getFromEnv("POSTGRES_HOST", "postgres")
-	port := getFromEnv("POSTGRES_PORT", "5432")
-	user := getFromEnv("POSTGRES_USER", "postgres")
-	password := getFromEnv("POSTGRES_PASSWORD", "postgres")
-	dbname := getFromEnv("POSTGRES_DB", "itam_hackaton")
+	dsn := fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
+		host, user, pass, dbname, port,
+	)
 
-	psqlInfo := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
-
-	var err error
-	DB, err = sql.Open("postgres", psqlInfo)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return nil, err
 	}
 
-	if err = DB.Ping(); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	fmt.Println("Successfully connected to PostgreSQL")
-	return nil
+	DB = db
+	return db, nil
 }
 
 func Close() error {
-	if DB != nil {
-		return DB.Close()
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return err
 	}
-	return nil
+	return sqlDB.Close()
 }
 
-func getFromEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
+func AutoMigrate() error {
+	return DB.AutoMigrate(
+		&models.User{},
+		&models.Case{},
+		&models.CaseContent{},
+		&models.CaseItem{},
+		&models.Clothes{},
+		&models.Hackathon{},
+		&models.MatchCandidate{},
+		&models.Match{},
+	)
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-	return value
+	return fallback
 }
 
 func CreateUser(ctx context.Context, telegramUserID int64, username string) error {
-	query := `
-		INSERT INTO users (telegram_user_id, username, authorized, created_at)
-		VALUES ($1, $2, $3, NOW())
-		ON CONFLICT (telegram_user_id) DO UPDATE
-		SET username = EXCLUDED.username, authorized = true
-		RETURNING telegram_user_id
-	`
-	
-	var id int64
-	err := DB.QueryRowContext(ctx, query, telegramUserID, username, true).Scan(&id)
-	if err != nil {
-		return fmt.Errorf("failed to create/update user: %w", err)
+	var user models.User
+
+	err := DB.WithContext(ctx).Where("telegram_user_id = ?", telegramUserID).First(&user).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// New user
+		user = models.User{
+			TelegramUserID: telegramUserID,
+			Username:       username,
+			Authorized:     true,
+		}
+		return DB.WithContext(ctx).Create(&user).Error
 	}
-	
-	return nil
+
+	return DB.WithContext(ctx).Model(&user).Updates(map[string]interface{}{
+		"username":   username,
+		"authorized": true,
+	}).Error
 }
 
 func UserExists(ctx context.Context, telegramUserID int64) (bool, error) {
-	var exists bool
-	query := `SELECT EXISTS(SELECT 1 FROM users WHERE telegram_user_id = $1)`
-	err := DB.QueryRowContext(ctx, query, telegramUserID).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("failed to check user existence: %w", err)
-	}
-	return exists, nil
+	var count int64
+	err := DB.WithContext(ctx).Model(&models.User{}).
+		Where("telegram_user_id = ?", telegramUserID).
+		Count(&count).Error
+
+	return count > 0, err
 }
 
-func GetUser(ctx context.Context, telegramUserID int64) (*User, error) {
-	user := &User{}
-	query := `SELECT telegram_user_id, username, authorized, created_at FROM users WHERE telegram_user_id = $1`
-	
-	err := DB.QueryRowContext(ctx, query, telegramUserID).Scan(
-		&user.TelegramUserID,
-		&user.Username,
-		&user.Authorized,
-		&user.CreatedAt,
-	)
+func GetUser(ctx context.Context, telegramUserID int64) (*models.User, error) {
+	var user models.User
+	err := DB.WithContext(ctx).Where("telegram_user_id = ?", telegramUserID).
+		First(&user).Error
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, err
 	}
-	
-	return user, nil
+
+	return &user, nil
 }
 
-func GetAllAuthorizedUsers(ctx context.Context) ([]User, error) {
-	query := `SELECT telegram_user_id, username, authorized, created_at FROM users WHERE authorized = true`
-	
-	rows, err := DB.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query users: %w", err)
-	}
-	defer rows.Close()
-	
-	var users []User
-	for rows.Next() {
-		var user User
-		if err := rows.Scan(&user.TelegramUserID, &user.Username, &user.Authorized, &user.CreatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan user: %w", err)
-		}
-		users = append(users, user)
-	}
-	
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating users: %w", err)
-	}
-	
-	return users, nil
-}
+func GetAllAuthorizedUsers(ctx context.Context) ([]models.User, error) {
+	var users []models.User
+	err := DB.WithContext(ctx).
+		Where("authorized = true").
+		Find(&users).Error
 
+	return users, err
+}

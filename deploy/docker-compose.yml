@@ -65,6 +65,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+  frontend:
+    image: ghcr.io/akulalu07/itam_hackaton-frontend:latest
+    container_name: frontend
+    ports:
+      - '3000:3000'
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - default
+
 
 volumes:
   redis_data:

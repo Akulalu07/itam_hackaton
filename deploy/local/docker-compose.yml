@@ -70,6 +70,17 @@ services:
     restart: unless-stopped
     depends_on:
       - redis 
+      
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      - backend
 
 volumes:
   redis_data:
