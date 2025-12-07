@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Users, Mail, User, Trophy, Zap } from 'lucide-react';
-import { useAuthStore, useHackathonStore } from '../../store/useStore';
+import { useAuthStore, useHackathonStore, useInviteStore } from '../../store/useStore';
 import { ROUTES } from '../../routes';
 import { useEffect } from 'react';
 
@@ -11,9 +11,11 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { user, becomeCaptain } = useAuthStore();
   const { selectedHackathon, fetchHackathons, hackathons, selectHackathon } = useHackathonStore();
+  const { invites, fetchInvites } = useInviteStore();
 
   useEffect(() => {
     fetchHackathons();
+    fetchInvites();
   }, []);
 
   useEffect(() => {
@@ -110,7 +112,7 @@ export function DashboardPage() {
               <h3 className="font-semibold">Мои приглашения</h3>
               <p className="text-sm text-base-content/60">Проверить инвайты от капитанов</p>
             </div>
-            <div className="badge badge-ghost">3 новых</div>
+            <div className="badge badge-ghost">{invites.length > 0 ? `${invites.length} новых` : 'нет новых'}</div>
           </div>
         </div>
 

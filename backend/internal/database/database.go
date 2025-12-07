@@ -43,7 +43,11 @@ func Close() error {
 }
 
 func AutoMigrate() error {
-	return DB.AutoMigrate(
+	// Создаём таблицы если их нет, но не удаляем существующие constraints
+	migrator := DB.Migrator()
+
+	// Миграция моделей по одной для лучшего контроля
+	modelsToMigrate := []interface{}{
 		&models.User{},
 		&models.Case{},
 		&models.CaseContent{},
@@ -56,7 +60,17 @@ func AutoMigrate() error {
 		&models.TeamInvite{},
 		&models.Swipe{},
 		&models.Match{},
-	)
+	}
+
+	for _, model := range modelsToMigrate {
+		if !migrator.HasTable(model) {
+			if err := DB.AutoMigrate(model); err != nil {
+				return fmt.Errorf("failed to migrate %T: %w", model, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func getEnv(key, fallback string) string {
@@ -66,7 +80,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func CreateUser(ctx context.Context, telegramUserID int64, username string) error {
+func CreateUser(ctx context.Context, telegramUserID int64, username string) (*models.User, error) {
 	var user models.User
 
 	err := DB.WithContext(ctx).Where("telegram_user_id = ?", telegramUserID).First(&user).Error
@@ -78,13 +92,25 @@ func CreateUser(ctx context.Context, telegramUserID int64, username string) erro
 			Username:       username,
 			Authorized:     true,
 		}
-		return DB.WithContext(ctx).Create(&user).Error
+		if err := DB.WithContext(ctx).Create(&user).Error; err != nil {
+			return nil, err
+		}
+		return &user, nil
 	}
 
-	return DB.WithContext(ctx).Model(&user).Updates(map[string]interface{}{
+	if err != nil {
+		return nil, err
+	}
+
+	// Update existing user
+	if err := DB.WithContext(ctx).Model(&user).Updates(map[string]interface{}{
 		"username":   username,
 		"authorized": true,
-	}).Error
+	}).Error; err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }
 
 func UserExists(ctx context.Context, telegramUserID int64) (bool, error) {

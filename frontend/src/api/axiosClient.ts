@@ -43,7 +43,7 @@ axiosClient.interceptors.request.use(
 );
 
 /**
- * Response Interceptor - обработка ошибок и авто-редирект при 401
+ * Response Interceptor - обработка ошибок
  */
 axiosClient.interceptors.response.use(
   (response: AxiosResponse) => {
@@ -52,16 +52,10 @@ axiosClient.interceptors.response.use(
   async (error: AxiosError) => {
     
     // Если получили 401 - токен истёк или невалидный
+    // НЕ удаляем токены автоматически - пользователь сам выйдет или получит новый токен
     if (error.response?.status === 401) {
-      // Очищаем токены
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
-      
-      // Редирект на страницу логина (если не уже там)
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
-        window.location.href = '/login';
-      }
-      
+      console.warn('[API] 401 Unauthorized - token may be expired');
+      // Не очищаем localStorage - сохраняем локальные данные пользователя
       return Promise.reject(new Error('Unauthorized - Please login again'));
     }
     
