@@ -29,7 +29,8 @@ export interface UserSkill {
   id: string;
   name: string;
   level: SkillLevel;
-  category: 'frontend' | 'backend' | 'design' | 'ml' | 'devops' | 'management' | 'other';
+  category?: 'frontend' | 'backend' | 'design' | 'ml' | 'devops' | 'management' | 'other';
+  verified?: boolean; // подтверждён тестом
 }
 
 // User Profile
@@ -145,4 +146,75 @@ export interface Analytics {
   hackathonsActive: number;
   dailySignups: { date: string; count: number }[];
   skillDistribution: { skill: string; count: number }[];
+}
+
+// ============================================
+// SKILL TEST TYPES - Тесты для подтверждения навыков
+// ============================================
+
+// Категории навыков для тестов
+export type SkillCategory = 'frontend' | 'backend' | 'design' | 'ml' | 'devops' | 'management' | 'other';
+
+// Вопрос теста
+export interface TestQuestion {
+  id: string;
+  question: string;
+  code?: string; // Код для показа в вопросе
+  options: TestOption[];
+  difficulty: 'easy' | 'medium' | 'hard';
+  explanation?: string; // Объяснение правильного ответа
+}
+
+// Вариант ответа
+export interface TestOption {
+  id: string;
+  text: string;
+  isCorrect: boolean;
+}
+
+// Тест по навыку
+export interface SkillTest {
+  id: string;
+  skillName: string; // "Go", "React", "TypeScript" и т.д.
+  category: SkillCategory;
+  description: string;
+  questions: TestQuestion[];
+  passingScore: number; // Минимум правильных для прохождения (в процентах)
+  timeLimit?: number; // Лимит времени в секундах (опционально)
+  levelThresholds: {
+    beginner: number;    // 0-49%
+    intermediate: number; // 50-69%
+    advanced: number;     // 70-89%
+    expert: number;       // 90-100%
+  };
+}
+
+// Ответ пользователя
+export interface UserAnswer {
+  questionId: string;
+  selectedOptionId: string;
+  isCorrect: boolean;
+  timeSpent?: number; // Время на ответ в секундах
+}
+
+// Результат прохождения теста
+export interface TestResult {
+  id: string;
+  userId: string;
+  skillName: string;
+  score: number; // Процент правильных ответов
+  level: SkillLevel; // Определённый уровень
+  answers: UserAnswer[];
+  completedAt: Date;
+  timeSpent: number; // Общее время в секундах
+}
+
+// Статус теста по навыку для пользователя
+export interface UserSkillTestStatus {
+  skillName: string;
+  isVerified: boolean;
+  level?: SkillLevel;
+  lastTestResult?: TestResult;
+  canRetake: boolean; // Можно ли пересдать
+  retakeAvailableAt?: Date; // Когда можно пересдать
 }

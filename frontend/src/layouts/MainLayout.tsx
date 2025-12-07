@@ -4,10 +4,10 @@ import {
   Users, 
   Heart, 
   User, 
-  Mail,
   LogOut,
   Menu,
-  X
+  X,
+  BookCheck
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../store/useStore';
 import { ROUTES } from '../routes';
@@ -32,7 +32,7 @@ export function MainLayout() {
     { to: ROUTES.DASHBOARD, icon: Home, label: 'Главная' },
     { to: ROUTES.SWIPE, icon: Heart, label: 'Поиск', show: user?.role === 'captain' },
     { to: ROUTES.MY_TEAM, icon: Users, label: 'Команда' },
-    { to: ROUTES.INVITES, icon: Mail, label: 'Инвайты' },
+    { to: ROUTES.SKILL_TESTS, icon: BookCheck, label: 'Тесты' },
     { to: ROUTES.PROFILE, icon: User, label: 'Профиль' },
   ].filter(item => item.show !== false);
 

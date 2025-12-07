@@ -13,6 +13,7 @@ export const ROUTES = {
   SELECT_HACKATHON: '/select-hackathon',
   PROFILE: '/profile',
   PROFILE_EDIT: '/profile/edit',
+  SKILL_TESTS: '/skill-tests',
   
   // Captain routes
   CREATE_TEAM: '/team/create',
