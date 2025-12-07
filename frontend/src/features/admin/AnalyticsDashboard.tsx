@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Users, 
   UsersRound, 
@@ -7,9 +7,18 @@ import {
   Calendar,
   Download,
   RefreshCw,
-  ArrowUpRight
+  AlertCircle
 } from 'lucide-react';
-import { mockUsers, mockTeams, mockHackathons } from '../../data/mockData';
+import axiosClient from '../../api/axiosClient';
+
+interface AdminStats {
+  totalUsers: number;
+  totalTeams: number;
+  totalHackathons: number;
+  activeHackathons: number;
+  usersLookingForTeam: number;
+  usersInTeam: number;
+}
 
 /**
  * AnalyticsDashboard - Аналитика платформы (Admin)
@@ -17,49 +26,40 @@ import { mockUsers, mockTeams, mockHackathons } from '../../data/mockData';
 export function AnalyticsDashboard() {
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('month');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<AdminStats>({
+    totalUsers: 0,
+    totalTeams: 0,
+    totalHackathons: 0,
+    activeHackathons: 0,
+    usersLookingForTeam: 0,
+    usersInTeam: 0,
+  });
 
-  // Mock statistics
-  const stats = {
-    totalUsers: mockUsers.length,
-    totalTeams: mockTeams.length,
-    totalHackathons: mockHackathons.length,
-    activeHackathons: mockHackathons.filter(h => h.status === 'active').length,
-    avgTeamSize: 3.5,
-    matchRate: 78,
-    userGrowth: 12.5,
-    teamGrowth: 8.3,
+  // Загрузка статистики с бэкенда
+  const fetchStats = async () => {
+    try {
+      setError(null);
+      const response = await axiosClient.get('/api/admin/stats');
+      setStats(response.data);
+    } catch (err: any) {
+      console.error('Failed to fetch stats:', err);
+      setError('Не удалось загрузить статистику');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
   };
 
-  // Mock chart data
-  const chartData = [
-    { label: 'Пн', users: 45, teams: 12 },
-    { label: 'Вт', users: 52, teams: 15 },
-    { label: 'Ср', users: 48, teams: 14 },
-    { label: 'Чт', users: 70, teams: 22 },
-    { label: 'Пт', users: 85, teams: 28 },
-    { label: 'Сб', users: 65, teams: 20 },
-    { label: 'Вс', users: 40, teams: 10 },
-  ];
-
-  const maxValue = Math.max(...chartData.map(d => Math.max(d.users, d.teams)));
-
-  // Skills distribution
-  const skillsDistribution = [
-    { name: 'Frontend', count: 45, color: 'bg-primary' },
-    { name: 'Backend', count: 38, color: 'bg-secondary' },
-    { name: 'Design', count: 25, color: 'bg-accent' },
-    { name: 'ML/AI', count: 18, color: 'bg-info' },
-    { name: 'DevOps', count: 12, color: 'bg-warning' },
-    { name: 'Management', count: 8, color: 'bg-error' },
-  ];
-
-  const totalSkills = skillsDistribution.reduce((sum, s) => sum + s.count, 0);
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   // Refresh data
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsRefreshing(false);
+    await fetchStats();
   };
 
   // Export CSV
@@ -69,8 +69,8 @@ export function AnalyticsDashboard() {
 Всего команд,${stats.totalTeams}
 Всего хакатонов,${stats.totalHackathons}
 Активных хакатонов,${stats.activeHackathons}
-Средний размер команды,${stats.avgTeamSize}
-Рейтинг мэтчинга,${stats.matchRate}%`;
+Ищут команду,${stats.usersLookingForTeam}
+В команде,${stats.usersInTeam}`;
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -79,6 +79,26 @@ export function AnalyticsDashboard() {
     link.download = `analytics_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <span className="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="alert alert-error">
+        <AlertCircle className="w-5 h-5" />
+        <span>{error}</span>
+        <button className="btn btn-sm btn-ghost" onClick={handleRefresh}>
+          Повторить
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -112,16 +132,15 @@ export function AnalyticsDashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="stat bg-base-200 rounded-lg">
           <div className="stat-figure text-primary">
             <Users className="w-8 h-8" />
           </div>
           <div className="stat-title">Пользователей</div>
           <div className="stat-value text-primary">{stats.totalUsers}</div>
-          <div className="stat-desc flex items-center gap-1 text-success">
-            <ArrowUpRight className="w-4 h-4" />
-            +{stats.userGrowth}% за период
+          <div className="stat-desc">
+            {stats.usersLookingForTeam} ищут команду
           </div>
         </div>
 
@@ -131,9 +150,8 @@ export function AnalyticsDashboard() {
           </div>
           <div className="stat-title">Команд</div>
           <div className="stat-value text-secondary">{stats.totalTeams}</div>
-          <div className="stat-desc flex items-center gap-1 text-success">
-            <ArrowUpRight className="w-4 h-4" />
-            +{stats.teamGrowth}% за период
+          <div className="stat-desc">
+            {stats.usersInTeam} участников в командах
           </div>
         </div>
 
@@ -152,145 +170,94 @@ export function AnalyticsDashboard() {
           <div className="stat-figure text-info">
             <Trophy className="w-8 h-8" />
           </div>
-          <div className="stat-title">Мэтч-рейт</div>
-          <div className="stat-value text-info">{stats.matchRate}%</div>
+          <div className="stat-title">Активность</div>
+          <div className="stat-value text-info">
+            {stats.totalUsers > 0 
+              ? Math.round((stats.usersInTeam / stats.totalUsers) * 100) 
+              : 0}%
+          </div>
           <div className="stat-desc">
-            Успешных совпадений
+            Участников в командах
           </div>
         </div>
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-2 gap-6">
-        {/* Activity Chart */}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Quick Stats */}
         <div className="bg-base-200 rounded-lg p-6">
           <h3 className="font-semibold mb-4 flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-primary" />
-            Активность за неделю
+            Сводка по платформе
           </h3>
-          
-          {/* Bar Chart */}
-          <div className="flex items-end justify-between h-48 gap-2">
-            {chartData.map((day, index) => (
-              <div key={index} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full flex gap-1 items-end h-40">
-                  {/* Users bar */}
-                  <div 
-                    className="flex-1 bg-primary rounded-t transition-all hover:opacity-80"
-                    style={{ height: `${(day.users / maxValue) * 100}%` }}
-                    title={`Пользователи: ${day.users}`}
-                  />
-                  {/* Teams bar */}
-                  <div 
-                    className="flex-1 bg-secondary rounded-t transition-all hover:opacity-80"
-                    style={{ height: `${(day.teams / maxValue) * 100}%` }}
-                    title={`Команды: ${day.teams}`}
-                  />
-                </div>
-                <span className="text-xs text-base-content/60">{day.label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Legend */}
-          <div className="flex justify-center gap-6 mt-4">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-primary rounded" />
-              <span className="text-sm">Пользователи</span>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-base-content/70">Всего пользователей</span>
+              <span className="font-semibold text-lg">{stats.totalUsers}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-secondary rounded" />
-              <span className="text-sm">Команды</span>
+            <div className="divider my-0" />
+            <div className="flex justify-between items-center">
+              <span className="text-base-content/70">Ищут команду</span>
+              <span className="font-semibold text-lg text-warning">{stats.usersLookingForTeam}</span>
+            </div>
+            <div className="divider my-0" />
+            <div className="flex justify-between items-center">
+              <span className="text-base-content/70">В командах</span>
+              <span className="font-semibold text-lg text-success">{stats.usersInTeam}</span>
+            </div>
+            <div className="divider my-0" />
+            <div className="flex justify-between items-center">
+              <span className="text-base-content/70">Всего команд</span>
+              <span className="font-semibold text-lg">{stats.totalTeams}</span>
+            </div>
+            <div className="divider my-0" />
+            <div className="flex justify-between items-center">
+              <span className="text-base-content/70">Хакатонов</span>
+              <span className="font-semibold text-lg">{stats.totalHackathons}</span>
+            </div>
+            <div className="divider my-0" />
+            <div className="flex justify-between items-center">
+              <span className="text-base-content/70">Активных хакатонов</span>
+              <span className="font-semibold text-lg text-primary">{stats.activeHackathons}</span>
             </div>
           </div>
         </div>
 
-        {/* Skills Distribution */}
+        {/* Activity Rate */}
         <div className="bg-base-200 rounded-lg p-6">
-          <h3 className="font-semibold mb-4">Распределение навыков</h3>
+          <h3 className="font-semibold mb-4">Процент активности</h3>
           
-          <div className="space-y-4">
-            {skillsDistribution.map((skill, index) => (
-              <div key={index}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>{skill.name}</span>
-                  <span className="text-base-content/60">
-                    {skill.count} ({Math.round((skill.count / totalSkills) * 100)}%)
-                  </span>
-                </div>
-                <div className="w-full bg-base-300 rounded-full h-2">
-                  <div 
-                    className={`${skill.color} h-2 rounded-full transition-all`}
-                    style={{ width: `${(skill.count / totalSkills) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+          <div className="flex flex-col items-center justify-center h-48">
+            <div className="radial-progress text-primary" 
+              style={{ 
+                '--value': stats.totalUsers > 0 
+                  ? Math.round((stats.usersInTeam / stats.totalUsers) * 100) 
+                  : 0,
+                '--size': '12rem',
+                '--thickness': '1rem'
+              } as React.CSSProperties}
+              role="progressbar"
+            >
+              <span className="text-3xl font-bold">
+                {stats.totalUsers > 0 
+                  ? Math.round((stats.usersInTeam / stats.totalUsers) * 100) 
+                  : 0}%
+              </span>
+            </div>
+            <p className="text-base-content/60 mt-4 text-center">
+              Участников нашли команду
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Bottom Row */}
-      <div className="grid grid-cols-3 gap-6">
-        {/* Recent Activity */}
-        <div className="bg-base-200 rounded-lg p-6 col-span-2">
-          <h3 className="font-semibold mb-4">Последняя активность</h3>
-          <div className="space-y-3">
-            {[
-              { action: 'Новая регистрация', user: 'Алексей П.', time: '5 мин назад', type: 'user' },
-              { action: 'Создана команда', user: 'Code Warriors', time: '12 мин назад', type: 'team' },
-              { action: 'Приглашение принято', user: 'Мария И.', time: '25 мин назад', type: 'invite' },
-              { action: 'Новый хакатон', user: 'AI Challenge 2025', time: '1 час назад', type: 'hackathon' },
-              { action: 'Команда сформирована', user: 'Debug Masters', time: '2 часа назад', type: 'team' },
-            ].map((activity, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-base-300/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${
-                    activity.type === 'user' ? 'bg-primary' :
-                    activity.type === 'team' ? 'bg-secondary' :
-                    activity.type === 'invite' ? 'bg-success' : 'bg-accent'
-                  }`} />
-                  <div>
-                    <span className="font-medium">{activity.action}</span>
-                    <span className="text-base-content/60"> — {activity.user}</span>
-                  </div>
-                </div>
-                <span className="text-xs text-base-content/50">{activity.time}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="bg-base-200 rounded-lg p-6">
-          <h3 className="font-semibold mb-4">Быстрая статистика</h3>
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-base-content/70">Средний размер команды</span>
-              <span className="font-semibold">{stats.avgTeamSize}</span>
-            </div>
-            <div className="divider my-0" />
-            <div className="flex justify-between items-center">
-              <span className="text-base-content/70">Пользователей без команды</span>
-              <span className="font-semibold">{mockUsers.filter(u => u.status === 'looking').length}</span>
-            </div>
-            <div className="divider my-0" />
-            <div className="flex justify-between items-center">
-              <span className="text-base-content/70">Капитанов</span>
-              <span className="font-semibold">{mockUsers.filter(u => u.role === 'captain').length}</span>
-            </div>
-            <div className="divider my-0" />
-            <div className="flex justify-between items-center">
-              <span className="text-base-content/70">Неполных команд</span>
-              <span className="font-semibold">{mockTeams.filter(t => t.members.length < t.maxSize).length}</span>
-            </div>
-            <div className="divider my-0" />
-            <div className="flex justify-between items-center">
-              <span className="text-base-content/70">Приглашений сегодня</span>
-              <span className="font-semibold">24</span>
-            </div>
-          </div>
-        </div>
+      {/* Info Box */}
+      <div className="alert alert-info">
+        <AlertCircle className="w-5 h-5" />
+        <span>
+          Данные обновляются в реальном времени из базы данных. 
+          Нажмите кнопку "Обновить" для получения актуальной статистики.
+        </span>
       </div>
     </div>
   );

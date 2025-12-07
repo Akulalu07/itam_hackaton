@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -11,10 +11,11 @@ import {
   X,
   Clock,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import { Hackathon } from '../../types';
-import { mockHackathons } from '../../data/mockData';
+import axiosClient from '../../api/axiosClient';
 
 // Status badge styles
 const statusStyles: Record<string, string> = {
@@ -35,7 +36,9 @@ const statusLabels: Record<string, string> = {
  * HackathonManager - Управление хакатонами (Admin)
  */
 export function HackathonManager() {
-  const [hackathons, setHackathons] = useState<Hackathon[]>(mockHackathons);
+  const [hackathons, setHackathons] = useState<Hackathon[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -51,6 +54,59 @@ export function HackathonManager() {
     minTeamSize: 2,
     maxTeamSize: 5,
   });
+
+  // Fetch hackathons from API
+  const fetchHackathons = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await axiosClient.get('/api/hackathons');
+      
+      // Transform backend response to frontend Hackathon type
+      const transformedHackathons: Hackathon[] = (response.data || []).map((h: any) => ({
+        id: String(h.id),
+        name: h.name || '',
+        description: h.description || '',
+        imageUrl: h.imageUrl,
+        startDate: new Date(h.startDate),
+        endDate: new Date(h.endDate),
+        registrationDeadline: new Date(h.registrationDeadline || h.endDate),
+        maxTeamSize: h.teamSize || h.maxTeamSize || 5,
+        minTeamSize: h.minTeamSize || 2,
+        status: mapBackendStatus(h.status),
+        participantsCount: h.participantsCount || 0,
+        teamsCount: h.teamsCount || 0,
+        createdAt: new Date(h.createdAt),
+      }));
+      
+      setHackathons(transformedHackathons);
+    } catch (err: any) {
+      console.error('Failed to fetch hackathons:', err);
+      setError(err.response?.data?.error || 'Не удалось загрузить хакатоны');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Map backend status to frontend status
+  const mapBackendStatus = (status: string): Hackathon['status'] => {
+    switch (status) {
+      case 'registration_open':
+        return 'registration';
+      case 'active':
+      case 'in_progress':
+        return 'active';
+      case 'completed':
+      case 'finished':
+        return 'completed';
+      default:
+        return 'upcoming';
+    }
+  };
+
+  useEffect(() => {
+    fetchHackathons();
+  }, []);
 
   // Filter hackathons
   const filteredHackathons = hackathons.filter(h => {
@@ -90,50 +146,77 @@ export function HackathonManager() {
   };
 
   // Handle form submit
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingHackathon) {
-      // Update existing
-      setHackathons(prev => prev.map(h => 
-        h.id === editingHackathon.id 
-          ? {
-              ...h,
-              ...formData,
-              startDate: new Date(formData.startDate),
-              endDate: new Date(formData.endDate),
-              registrationDeadline: new Date(formData.registrationDeadline),
-            }
-          : h
-      ));
-    } else {
-      // Create new
-      const newHackathon: Hackathon = {
-        id: Date.now().toString(),
-        name: formData.name,
-        description: formData.description,
-        startDate: new Date(formData.startDate),
-        endDate: new Date(formData.endDate),
-        registrationDeadline: new Date(formData.registrationDeadline),
-        minTeamSize: formData.minTeamSize,
-        maxTeamSize: formData.maxTeamSize,
-        status: 'upcoming',
-        participantsCount: 0,
-        teamsCount: 0,
-        createdAt: new Date(),
-      };
-      setHackathons(prev => [newHackathon, ...prev]);
+    try {
+      if (editingHackathon) {
+        // Update existing via API
+        await axiosClient.put(`/admin/api/hackathons/${editingHackathon.id}`, {
+          name: formData.name,
+          description: formData.description,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          registrationDeadline: formData.registrationDeadline,
+          minTeamSize: formData.minTeamSize,
+          maxTeamSize: formData.maxTeamSize,
+        });
+      } else {
+        // Create new via API
+        await axiosClient.post('/admin/api/hackathons', {
+          name: formData.name,
+          description: formData.description,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          registrationDeadline: formData.registrationDeadline,
+          teamSize: formData.maxTeamSize,
+          maxTeams: 100,
+        });
+      }
+      
+      // Refresh list
+      await fetchHackathons();
+      setIsModalOpen(false);
+    } catch (err: any) {
+      console.error('Failed to save hackathon:', err);
+      alert(err.response?.data?.error || 'Не удалось сохранить хакатон');
     }
-    
-    setIsModalOpen(false);
   };
 
   // Delete hackathon
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Удалить хакатон?')) {
-      setHackathons(prev => prev.filter(h => h.id !== id));
+      try {
+        await axiosClient.delete(`/admin/api/hackathons/${id}`);
+        await fetchHackathons();
+      } catch (err: any) {
+        console.error('Failed to delete hackathon:', err);
+        alert(err.response?.data?.error || 'Не удалось удалить хакатон');
+      }
     }
   };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <AlertCircle className="w-12 h-12 text-error" />
+        <p className="text-error">{error}</p>
+        <button className="btn btn-primary" onClick={fetchHackathons}>
+          Попробовать снова
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

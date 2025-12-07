@@ -41,13 +41,6 @@ export function HomePage() {
                 </svg>
                 Войти через Telegram
               </button>
-              
-              <button 
-                className="btn btn-outline btn-lg"
-                onClick={() => navigate(ROUTES.ADMIN_LOGIN)}
-              >
-                Вход для админов
-              </button>
             </div>
 
             {/* Features */}

@@ -59,6 +59,9 @@ export interface User {
   currentTeamId?: string;
   profileComplete?: boolean;
   
+  // Customization (опционально, для отображения на карточках)
+  customization?: ProfileCustomization;
+  
   createdAt: Date;
   updatedAt: Date;
 }
@@ -218,3 +221,104 @@ export interface UserSkillTestStatus {
   canRetake: boolean; // Можно ли пересдать
   retakeAvailableAt?: Date; // Когда можно пересдать
 }
+
+// ============================================
+// PROFILE CUSTOMIZATION - Кастомизация профиля
+// ============================================
+
+// Редкость предметов
+export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+// Тип предмета кастомизации
+export type CustomizationItemType = 
+  | 'background'      // Фон профиля
+  | 'nameColor'       // Цвет ника
+  | 'avatarFrame'     // Рамка аватара
+  | 'badge'           // Значок/бейдж достижения
+  | 'title'           // Кастомный титул
+  | 'effect';         // Визуальный эффект (блеск, частицы)
+
+// Предмет кастомизации
+export interface CustomizationItem {
+  id: string;
+  name: string;
+  type: CustomizationItemType;
+  rarity: ItemRarity;
+  previewUrl?: string;     // URL превью изображения
+  value: string;           // CSS градиент для фона, HEX для цвета, URL для картинки
+  description?: string;
+  isAnimated?: boolean;    // Анимированный ли предмет
+}
+
+// Достижение
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  iconUrl: string;
+  rarity: ItemRarity;
+  earnedAt?: Date;
+  progress?: number;       // Прогресс до получения (0-100)
+  maxProgress?: number;    // Максимум для прогресса
+  category: 'hackathon' | 'skill' | 'social' | 'special';
+}
+
+// Кейс (лутбокс)
+export interface Case {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  rarity: ItemRarity;
+  possibleItems: CaseDropItem[];  // Возможные выпадения
+  receivedAt: Date;
+  openedAt?: Date;
+  isOpened: boolean;
+}
+
+// Предмет с шансом выпадения из кейса
+export interface CaseDropItem {
+  item: CustomizationItem;
+  dropChance: number;      // Шанс выпадения в процентах
+}
+
+// Результат открытия кейса
+export interface CaseOpenResult {
+  caseId: string;
+  droppedItem: CustomizationItem;
+  isNew: boolean;          // Новый ли предмет для пользователя
+  openedAt: Date;
+}
+
+// Инвентарь пользователя
+export interface UserInventory {
+  items: InventoryItem[];
+  cases: Case[];
+  achievements: Achievement[];
+}
+
+// Предмет в инвентаре
+export interface InventoryItem {
+  item: CustomizationItem;
+  quantity: number;
+  obtainedAt: Date;
+  isEquipped: boolean;
+}
+
+// Активная кастомизация профиля
+export interface ProfileCustomization {
+  background?: CustomizationItem;    // Активный фон
+  nameColor?: CustomizationItem;     // Активный цвет ника
+  avatarFrame?: CustomizationItem;   // Активная рамка
+  badges: CustomizationItem[];       // Показанные бейджи (макс 3)
+  title?: CustomizationItem;         // Кастомный титул
+  effect?: CustomizationItem;        // Активный эффект
+  showcaseAchievements: Achievement[]; // Показанные достижения (макс 5)
+}
+
+// Расширяем User для добавления кастомизации
+export interface UserWithCustomization extends User {
+  inventory: UserInventory;
+  customization: ProfileCustomization;
+}
+

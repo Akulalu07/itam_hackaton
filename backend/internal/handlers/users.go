@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"backend/internal/database"
+	"backend/internal/models"
 	"backend/internal/types"
 	"context"
 	"net/http"
@@ -38,12 +39,56 @@ func registerUser(c *gin.Context) {
 		return
 	}
 
-	_, err = database.CreateUser(ctx, req.TelegramUserID, req.Username)
+	user, err := database.CreateUser(ctx, req.TelegramUserID, req.Username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to register user",
 		})
 		return
+	}
+
+	// Выдаём стартовый набор новому пользователю
+	if !exists {
+		// Стартовый кейс
+		starterCase := models.UserCase{
+			UserID:   user.ID,
+			CaseType: "starter",
+			CaseName: "Стартовый набор",
+			Rarity:   models.RarityUncommon,
+			IsOpened: false,
+		}
+		database.DB.Create(&starterCase)
+
+		// Стартовые предметы кастомизации
+		starterItems := []models.CustomizationItem{
+			{
+				UserID:   user.ID,
+				ItemID:   "bg-default",
+				ItemType: models.ItemTypeBackground,
+				Rarity:   models.RarityCommon,
+				Name:     "Стандартный фон",
+				Value:    "from-slate-900 to-slate-800",
+			},
+			{
+				UserID:   user.ID,
+				ItemID:   "nc-default",
+				ItemType: models.ItemTypeNameColor,
+				Rarity:   models.RarityCommon,
+				Name:     "Белый",
+				Value:    "#FFFFFF",
+			},
+			{
+				UserID:   user.ID,
+				ItemID:   "badge-participant",
+				ItemType: models.ItemTypeBadge,
+				Rarity:   models.RarityCommon,
+				Name:     "Участник",
+				Value:    "🎯",
+			},
+		}
+		for _, item := range starterItems {
+			database.DB.Create(&item)
+		}
 	}
 
 	response := gin.H{

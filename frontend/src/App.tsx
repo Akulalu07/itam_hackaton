@@ -8,6 +8,7 @@ import {
   HomePage,
   LoginPage, 
   AdminLoginPage,
+  AdminPasswordPage,
   TokenAuthPage,
   DashboardPage,
   SelectHackathonPage,
@@ -19,6 +20,7 @@ import {
   TeamManagePage,
   InvitesPage,
   SkillTestsPage,
+  InventoryPage,
   AdminDashboardPage,
   AdminHackathonsPage,
   AdminHackathonCreatePage,
@@ -26,6 +28,7 @@ import {
   AdminParticipantsPage,
   AdminTeamsPage,
   AdminAnalyticsPage,
+  AdminCasesPage,
 } from './pages';
 
 function App() {
@@ -79,6 +82,16 @@ function App() {
             } 
           />
 
+          {/* Admin Password (secret login) */}
+          <Route 
+            path={ROUTES.ADMIN_PASSWORD} 
+            element={
+              <PublicRoute>
+                <AdminPasswordPage />
+              </PublicRoute>
+            } 
+          />
+
           {/* ================================ */}
           {/* PARTICIPANT ROUTES (Protected) */}
           {/* ================================ */}
@@ -102,6 +115,9 @@ function App() {
             
             {/* Skill Tests */}
             <Route path={ROUTES.SKILL_TESTS} element={<SkillTestsPage />} />
+            
+            {/* Inventory & Customization */}
+            <Route path={ROUTES.INVENTORY} element={<InventoryPage />} />
             
             {/* Team Creation (becomes Captain) */}
             <Route path={ROUTES.CREATE_TEAM} element={<CreateTeamPage />} />
@@ -149,6 +165,7 @@ function App() {
             <Route path={ROUTES.ADMIN_PARTICIPANTS} element={<AdminParticipantsPage />} />
             <Route path={ROUTES.ADMIN_TEAMS} element={<AdminTeamsPage />} />
             <Route path={ROUTES.ADMIN_ANALYTICS} element={<AdminAnalyticsPage />} />
+            <Route path={ROUTES.ADMIN_CASES} element={<AdminCasesPage />} />
           </Route>
 
           {/* ================================ */}

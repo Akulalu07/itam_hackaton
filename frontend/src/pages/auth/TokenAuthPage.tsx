@@ -46,6 +46,12 @@ export function TokenAuthPage() {
       return;
     }
 
+    // Секретная команда для входа админа
+    if (tokenToUse === '/login-admin') {
+      navigate(ROUTES.ADMIN_PASSWORD, { replace: true });
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   Search, 
   Filter,
@@ -10,10 +10,14 @@ import {
   Mail,
   Trophy,
   Star,
-  Download
+  Download,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
-import { User } from '../../types';
-import { mockUsers } from '../../data/mockData';
+import { User, ProfileCustomization } from '../../types';
+import axiosClient from '../../api/axiosClient';
+import { CustomizedName, CustomizedAvatar } from '../../components/profile/CustomizedAvatar';
+import { nameColors, avatarFrames, badges } from '../../data/customization/items';
 
 // Status badge styles
 const statusStyles: Record<string, string> = {
@@ -42,13 +46,93 @@ type SortOrder = 'asc' | 'desc';
  * UserTable - Таблица пользователей (Admin)
  */
 export function UserTable() {
-  const [users] = useState<User[]>(mockUsers);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [totalUsers, setTotalUsers] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+
+  // Загрузка пользователей с бэкенда
+  const fetchUsers = async () => {
+    try {
+      setError(null);
+      setIsLoading(true);
+      const response = await axiosClient.get('/api/admin/users', {
+        params: { limit: 100 }
+      });
+      
+      // Преобразуем данные от бэкенда к формату фронтенда
+      const backendUsers = response.data.users || [];
+      const transformedUsers: User[] = backendUsers.map((u: any) => {
+        // Transform customization data
+        let customization: ProfileCustomization | undefined;
+        if (u.customization) {
+          const userBadges: typeof badges = [];
+          if (u.customization.badge1Id) {
+            const badge = badges.find(b => b.id === u.customization.badge1Id);
+            if (badge) userBadges.push(badge);
+          }
+          if (u.customization.badge2Id) {
+            const badge = badges.find(b => b.id === u.customization.badge2Id);
+            if (badge) userBadges.push(badge);
+          }
+          if (u.customization.badge3Id) {
+            const badge = badges.find(b => b.id === u.customization.badge3Id);
+            if (badge) userBadges.push(badge);
+          }
+          
+          customization = {
+            nameColor: u.customization.nameColorId 
+              ? nameColors.find(c => c.id === u.customization.nameColorId)
+              : undefined,
+            avatarFrame: u.customization.avatarFrameId 
+              ? avatarFrames.find(f => f.id === u.customization.avatarFrameId)
+              : undefined,
+            badges: userBadges,
+            showcaseAchievements: [],
+          };
+        }
+        
+        return {
+          id: String(u.id),
+          telegramId: u.telegram_id || u.telegramId,
+          name: u.name || 'Без имени',
+          role: u.role || 'participant',
+          status: u.team_id || u.teamId ? 'in_team' : 'looking',
+          skills: Array.isArray(u.skills) 
+            ? u.skills.map((s: string) => ({ name: s, level: 3 }))
+            : [],
+          experience: u.experience || '',
+          mmr: u.mmr || 1000,
+          pts: u.pts || 0,
+          title: 'Участник',
+          nftStickers: [],
+          bio: u.bio || '',
+          avatar: u.avatarUrl || u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.id}`,
+          createdAt: u.created_at || u.createdAt ? new Date(u.created_at || u.createdAt) : new Date(),
+          updatedAt: u.updated_at || u.updatedAt ? new Date(u.updated_at || u.updatedAt) : new Date(),
+          customization,
+        };
+      });
+      
+      setUsers(transformedUsers);
+      setTotalUsers(response.data.total || transformedUsers.length);
+    } catch (err: any) {
+      console.error('Failed to fetch users:', err);
+      setError('Не удалось загрузить пользователей');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   // Filter and sort users
   const filteredUsers = useMemo(() => {
@@ -146,6 +230,26 @@ export function UserTable() {
       : <ChevronDown className="w-4 h-4 inline ml-1" />;
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <span className="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="alert alert-error">
+        <AlertCircle className="w-5 h-5" />
+        <span>{error}</span>
+        <button className="btn btn-sm btn-ghost" onClick={fetchUsers}>
+          Повторить
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -153,14 +257,19 @@ export function UserTable() {
         <div>
           <h1 className="text-2xl font-bold">Пользователи</h1>
           <p className="text-base-content/60">
-            Всего: {users.length} | Показано: {filteredUsers.length}
+            Всего: {totalUsers} | Показано: {filteredUsers.length}
             {selectedUsers.size > 0 && ` | Выбрано: ${selectedUsers.size}`}
           </p>
         </div>
-        <button className="btn btn-outline" onClick={exportCSV}>
-          <Download className="w-4 h-4" />
-          Экспорт CSV
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-ghost btn-sm" onClick={fetchUsers}>
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <button className="btn btn-outline" onClick={exportCSV}>
+            <Download className="w-4 h-4" />
+            Экспорт CSV
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -257,18 +366,30 @@ export function UserTable() {
                 </td>
                 <td>
                   <div className="flex items-center gap-3">
-                    <div className="avatar">
-                      <div className="w-10 h-10 rounded-lg">
-                        <img src={user.avatar} alt={user.name} />
-                      </div>
-                    </div>
+                    <CustomizedAvatar 
+                      user={user} 
+                      customization={user.customization} 
+                      size="sm" 
+                      showFrame={true}
+                    />
                     <div>
-                      <div className="font-semibold">{user.name}</div>
+                      <div className="font-semibold">
+                        <CustomizedName 
+                          name={user.name} 
+                          customization={user.customization}
+                        />
+                      </div>
                       <div className="text-xs text-base-content/60 flex items-center gap-2">
                         <span className={`badge badge-xs ${roleStyles[user.role]}`}>
                           {user.role}
                         </span>
                         <span>{user.title}</span>
+                        {/* Show badges */}
+                        {user.customization?.badges?.map((badge, idx) => (
+                          <span key={idx} title={badge.name}>
+                            {badge.value || '🏅'}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   </div>

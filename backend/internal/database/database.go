@@ -60,6 +60,11 @@ func AutoMigrate() error {
 		&models.TeamInvite{},
 		&models.Swipe{},
 		&models.Match{},
+		// Customization models
+		&models.CustomizationItem{},
+		&models.UserCase{},
+		&models.UserAchievement{},
+		&models.ProfileCustomization{},
 	}
 
 	for _, model := range modelsToMigrate {

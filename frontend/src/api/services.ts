@@ -37,6 +37,76 @@ const mapSkillsFromBackend = (skills: string[] | null | undefined): UserSkill[] 
 export const transformUserFromBackend = (data: any): User => {
   console.log('[DEBUG] transformUserFromBackend input data:', data);
   console.log('[DEBUG] data.skills:', data.skills);
+  
+  // Трансформируем customization если есть
+  let customization: User['customization'] = undefined;
+  if (data.customization) {
+    customization = {
+      badges: [],
+      showcaseAchievements: [],
+    };
+    
+    if (data.customization.background) {
+      customization.background = {
+        id: data.customization.background.id,
+        name: data.customization.background.name,
+        type: 'background',
+        rarity: data.customization.background.rarity || 'common',
+        value: data.customization.background.value,
+      };
+    }
+    
+    if (data.customization.nameColor) {
+      customization.nameColor = {
+        id: data.customization.nameColor.id,
+        name: data.customization.nameColor.name,
+        type: 'nameColor',
+        rarity: data.customization.nameColor.rarity || 'common',
+        value: data.customization.nameColor.value,
+      };
+    }
+    
+    if (data.customization.avatarFrame) {
+      customization.avatarFrame = {
+        id: data.customization.avatarFrame.id,
+        name: data.customization.avatarFrame.name,
+        type: 'avatarFrame',
+        rarity: data.customization.avatarFrame.rarity || 'common',
+        value: data.customization.avatarFrame.value,
+      };
+    }
+    
+    if (data.customization.title) {
+      customization.title = {
+        id: data.customization.title.id,
+        name: data.customization.title.name,
+        type: 'title',
+        rarity: data.customization.title.rarity || 'common',
+        value: data.customization.title.value,
+      };
+    }
+    
+    if (data.customization.effect) {
+      customization.effect = {
+        id: data.customization.effect.id,
+        name: data.customization.effect.name,
+        type: 'effect',
+        rarity: data.customization.effect.rarity || 'common',
+        value: data.customization.effect.value,
+      };
+    }
+    
+    if (data.customization.badges && Array.isArray(data.customization.badges)) {
+      customization.badges = data.customization.badges.map((b: any) => ({
+        id: b.id,
+        name: b.name,
+        type: 'badge' as const,
+        rarity: b.rarity || 'common',
+        value: b.value,
+      }));
+    }
+  }
+  
   return {
     id: String(data.id),
     telegramId: data.telegramUserId ? String(data.telegramUserId) : (data.telegramId ? String(data.telegramId) : undefined),
@@ -58,6 +128,7 @@ export const transformUserFromBackend = (data: any): User => {
     profileComplete: data.profileComplete || false,
     createdAt: new Date(data.createdAt),
     updatedAt: new Date(data.updatedAt),
+    customization,
   };
 };
 
@@ -234,8 +305,9 @@ export const swipeService = {
    */
   getDeck: async (hackathonId?: string): Promise<User[]> => {
     const params = hackathonId ? { hackathonId } : {};
-    const response = await axiosClient.get<User[]>('/api/recommendations', { params });
-    return response.data;
+    const response = await axiosClient.get<any[]>('/api/recommendations', { params });
+    // Трансформируем каждого пользователя включая кастомизацию
+    return response.data.map(transformUserFromBackend);
   },
 
   /**
@@ -483,6 +555,124 @@ export const adminService = {
       params: { hackathonId },
       responseType: 'blob',
     });
+    return response.data;
+  },
+
+  /**
+   * Выдать кейсы пользователям (Admin)
+   */
+  giveCases: async (data: {
+    userIds: number[];
+    caseType: string;
+    caseName: string;
+    rarity: string;
+  }): Promise<{ message: string; givenCount: number }> => {
+    const response = await axiosClient.post('/api/admin/cases/give', data);
+    return response.data;
+  },
+};
+
+// ============================================
+// INVENTORY SERVICE - Инвентарь и кастомизация
+// ============================================
+
+export interface InventoryItem {
+  id: number;
+  userId: number;
+  itemId: string;
+  type: 'background' | 'nameColor' | 'avatarFrame' | 'badge' | 'title' | 'effect';
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+  name: string;
+  value: string;
+  isEquipped: boolean;
+  quantity: number;
+  obtainedAt: string;
+}
+
+export interface UserCaseAPI {
+  id: number;
+  userId: number;
+  caseType: string;
+  caseName: string;
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+  isOpened: boolean;
+  receivedAt: string;
+  openedAt?: string;
+}
+
+export interface UserAchievementAPI {
+  id: number;
+  userId: number;
+  achievementId: string;
+  name: string;
+  description: string;
+  iconUrl: string;
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+  progress: number;
+  maxProgress: number;
+  isCompleted: boolean;
+  earnedAt?: string;
+}
+
+export interface ProfileCustomizationAPI {
+  id: number;
+  userId: number;
+  backgroundId?: string;
+  nameColorId?: string;
+  avatarFrameId?: string;
+  titleId?: string;
+  effectId?: string;
+  badge1Id?: string;
+  badge2Id?: string;
+  badge3Id?: string;
+}
+
+export interface InventoryResponse {
+  items: InventoryItem[];
+  cases: UserCaseAPI[];
+  achievements: UserAchievementAPI[];
+  customization: ProfileCustomizationAPI | null;
+}
+
+export interface OpenCaseResponse {
+  droppedItem: InventoryItem;
+  isNew: boolean;
+}
+
+export const inventoryService = {
+  /**
+   * Получить инвентарь текущего пользователя
+   */
+  getInventory: async (): Promise<InventoryResponse> => {
+    const response = await axiosClient.get<InventoryResponse>('/api/inventory');
+    return response.data;
+  },
+
+  /**
+   * Экипировать/снять предмет
+   */
+  equipItem: async (data: {
+    itemId: string;
+    itemType: 'background' | 'nameColor' | 'avatarFrame' | 'badge' | 'title' | 'effect';
+    equip: boolean;
+  }): Promise<ProfileCustomizationAPI> => {
+    const response = await axiosClient.post<ProfileCustomizationAPI>('/api/inventory/equip', data);
+    return response.data;
+  },
+
+  /**
+   * Открыть кейс
+   */
+  openCase: async (caseId: number): Promise<OpenCaseResponse> => {
+    const response = await axiosClient.post<OpenCaseResponse>('/api/inventory/cases/open', { caseId });
+    return response.data;
+  },
+
+  /**
+   * Получить кастомизацию пользователя по ID
+   */
+  getUserCustomization: async (userId: string): Promise<ProfileCustomizationAPI> => {
+    const response = await axiosClient.get<ProfileCustomizationAPI>(`/api/users/${userId}/customization`);
     return response.data;
   },
 };

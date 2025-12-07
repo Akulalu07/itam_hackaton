@@ -759,3 +759,324 @@ export const useUIStore = create<UIStore>()(
     }
   )
 );
+
+// ============================================
+// INVENTORY STORE
+// ============================================
+import { inventoryService, InventoryItem as InventoryItemAPI, UserCaseAPI, UserAchievementAPI, OpenCaseResponse } from '../api/services';
+import { CustomizationItem, ProfileCustomization, Case, Achievement, CustomizationItemType } from '../types';
+
+// Преобразование из API типов в фронтенд типы
+const transformInventoryItem = (item: InventoryItemAPI): CustomizationItem => ({
+  id: item.itemId,
+  type: item.type as CustomizationItemType,
+  rarity: item.rarity,
+  name: item.name,
+  value: item.value,
+  previewUrl: '', // TODO: добавить в API
+  isAnimated: item.rarity === 'legendary' || item.rarity === 'epic',
+});
+
+const transformCase = (c: UserCaseAPI): Case => ({
+  id: c.id.toString(),
+  name: c.caseName,
+  description: `Кейс ${c.caseType}`,
+  imageUrl: `/cases/${c.caseType}.png`,
+  rarity: c.rarity,
+  possibleItems: [], // Заполняется на сервере
+  isOpened: c.isOpened,
+  receivedAt: new Date(c.receivedAt),
+  openedAt: c.openedAt ? new Date(c.openedAt) : undefined,
+});
+
+const transformAchievement = (a: UserAchievementAPI): Achievement => ({
+  id: a.achievementId,
+  name: a.name,
+  description: a.description,
+  iconUrl: a.iconUrl,
+  rarity: a.rarity,
+  category: 'special',
+  progress: a.progress,
+  maxProgress: a.maxProgress,
+  earnedAt: a.earnedAt ? new Date(a.earnedAt) : undefined,
+});
+
+interface InventoryStore {
+  items: CustomizationItem[];
+  cases: Case[];
+  achievements: Achievement[];
+  customization: ProfileCustomization;
+  isLoading: boolean;
+  error: string | null;
+  lastFetched: Date | null;
+  
+  // Actions
+  fetchInventory: () => Promise<void>;
+  equipItem: (item: CustomizationItem) => Promise<void>;
+  unequipItem: (type: CustomizationItemType) => Promise<void>;
+  openCase: (caseId: string) => Promise<OpenCaseResponse | null>;
+  addItems: (newItems: CustomizationItem[]) => void;
+  addCase: (newCase: Case) => void;
+  clearError: () => void;
+  getEquippedItem: (type: CustomizationItemType) => CustomizationItem | undefined;
+}
+
+const defaultCustomization: ProfileCustomization = {
+  badges: [],
+  showcaseAchievements: [],
+};
+
+export const useInventoryStore = create<InventoryStore>()(
+  persist(
+    (set, get) => ({
+      items: [],
+      cases: [],
+      achievements: [],
+      customization: defaultCustomization,
+      isLoading: false,
+      error: null,
+      lastFetched: null,
+
+      fetchInventory: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await inventoryService.getInventory();
+          console.log('[DEBUG] fetchInventory response:', response);
+          console.log('[DEBUG] response.cases:', response.cases);
+          console.log('[DEBUG] response.items:', response.items);
+          
+          const items = response.items.map(transformInventoryItem);
+          const cases = response.cases.map(transformCase);
+          console.log('[DEBUG] transformed cases:', cases);
+          const achievements = response.achievements.map(transformAchievement);
+          
+          // Собираем customization из экипированных предметов
+          const equippedItems = response.items.filter(i => i.isEquipped);
+          const customization: ProfileCustomization = {
+            badges: [],
+            showcaseAchievements: [],
+          };
+          
+          equippedItems.forEach(item => {
+            const transformed = transformInventoryItem(item);
+            switch (item.type) {
+              case 'background':
+                customization.background = transformed;
+                break;
+              case 'nameColor':
+                customization.nameColor = transformed;
+                break;
+              case 'avatarFrame':
+                customization.avatarFrame = transformed;
+                break;
+              case 'title':
+                customization.title = transformed;
+                break;
+              case 'effect':
+                customization.effect = transformed;
+                break;
+              case 'badge':
+                if (customization.badges.length < 3) {
+                  customization.badges.push(transformed);
+                }
+                break;
+            }
+          });
+          
+          set({
+            items,
+            cases,
+            achievements,
+            customization,
+            isLoading: false,
+            lastFetched: new Date(),
+          });
+        } catch (error) {
+          console.error('Fetch inventory error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Ошибка загрузки инвентаря',
+          });
+        }
+      },
+
+      equipItem: async (item) => {
+        set({ isLoading: true, error: null });
+        try {
+          await inventoryService.equipItem({
+            itemId: item.id,
+            itemType: item.type,
+            equip: true,
+          });
+          
+          // Обновляем локальное состояние
+          set(state => {
+            const newCustomization = { ...state.customization };
+            
+            switch (item.type) {
+              case 'background':
+                newCustomization.background = item;
+                break;
+              case 'nameColor':
+                newCustomization.nameColor = item;
+                break;
+              case 'avatarFrame':
+                newCustomization.avatarFrame = item;
+                break;
+              case 'title':
+                newCustomization.title = item;
+                break;
+              case 'effect':
+                newCustomization.effect = item;
+                break;
+              case 'badge':
+                // Добавляем бейдж если есть место
+                if (!newCustomization.badges.find(b => b.id === item.id) && newCustomization.badges.length < 3) {
+                  newCustomization.badges = [...newCustomization.badges, item];
+                }
+                break;
+            }
+            
+            return {
+              customization: newCustomization,
+              isLoading: false,
+            };
+          });
+        } catch (error) {
+          console.error('Equip item error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Ошибка экипировки предмета',
+          });
+        }
+      },
+
+      unequipItem: async (type) => {
+        set({ isLoading: true, error: null });
+        try {
+          const currentItem = get().getEquippedItem(type);
+          if (!currentItem) {
+            set({ isLoading: false });
+            return;
+          }
+          
+          await inventoryService.equipItem({
+            itemId: currentItem.id,
+            itemType: type,
+            equip: false,
+          });
+          
+          // Обновляем локальное состояние
+          set(state => {
+            const newCustomization = { ...state.customization };
+            
+            switch (type) {
+              case 'background':
+                delete newCustomization.background;
+                break;
+              case 'nameColor':
+                delete newCustomization.nameColor;
+                break;
+              case 'avatarFrame':
+                delete newCustomization.avatarFrame;
+                break;
+              case 'title':
+                delete newCustomization.title;
+                break;
+              case 'effect':
+                delete newCustomization.effect;
+                break;
+              case 'badge':
+                // Для бейджей нужно знать какой именно снимать
+                newCustomization.badges = [];
+                break;
+            }
+            
+            return {
+              customization: newCustomization,
+              isLoading: false,
+            };
+          });
+        } catch (error) {
+          console.error('Unequip item error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Ошибка снятия предмета',
+          });
+        }
+      },
+
+      openCase: async (caseId) => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await inventoryService.openCase(parseInt(caseId));
+          
+          // Добавляем новый предмет в инвентарь
+          const newItem = transformInventoryItem(response.droppedItem);
+          
+          set(state => ({
+            items: [...state.items, newItem],
+            cases: state.cases.map(c =>
+              c.id === caseId ? { ...c, isOpened: true, openedAt: new Date() } : c
+            ),
+            isLoading: false,
+          }));
+          
+          return response;
+        } catch (error) {
+          console.error('Open case error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Ошибка открытия кейса',
+          });
+          return null;
+        }
+      },
+
+      addItems: (newItems) => {
+        set(state => ({
+          items: [...state.items, ...newItems],
+        }));
+      },
+
+      addCase: (newCase) => {
+        set(state => ({
+          cases: [...state.cases, newCase],
+        }));
+      },
+
+      clearError: () => set({ error: null }),
+      
+      getEquippedItem: (type) => {
+        const state = get();
+        switch (type) {
+          case 'background':
+            return state.customization.background;
+          case 'nameColor':
+            return state.customization.nameColor;
+          case 'avatarFrame':
+            return state.customization.avatarFrame;
+          case 'title':
+            return state.customization.title;
+          case 'effect':
+            return state.customization.effect;
+          case 'badge':
+            return state.customization.badges[0];
+          default:
+            return undefined;
+        }
+      },
+    }),
+    {
+      name: 'itam-inventory-storage',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        items: state.items,
+        cases: state.cases,
+        achievements: state.achievements,
+        customization: state.customization,
+        lastFetched: state.lastFetched,
+      }),
+    }
+  )
+);

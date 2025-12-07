@@ -68,6 +68,10 @@ func StartServer() {
 		public.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "ok"})
 		})
+
+		// Public customization endpoint for SwipeCard display
+		inventoryHandlersPublic := NewInventoryHandlers(db)
+		public.GET("/users/:id/customization", inventoryHandlersPublic.GetUserCustomization)
 	}
 
 	// Admin login (separate)
@@ -118,6 +122,12 @@ func StartServer() {
 
 		// Notifications
 		protected.POST("/notification", server.SendNotification)
+
+		// Inventory & Customization
+		inventoryHandlers := NewInventoryHandlers(db)
+		protected.GET("/inventory", inventoryHandlers.GetInventory)
+		protected.POST("/inventory/equip", inventoryHandlers.EquipItem)
+		protected.POST("/inventory/cases/open", inventoryHandlers.OpenCase)
 	}
 
 	// ============================================
@@ -136,6 +146,10 @@ func StartServer() {
 		admin.POST("/hackathons", server.CreateHackathon)
 		admin.PUT("/hackathons/:id", server.AdminUpdateHackathon)
 		admin.DELETE("/hackathons/:id", server.DeleteHackathon)
+
+		// Admin Inventory - выдача кейсов
+		adminInventoryHandlers := NewInventoryHandlers(db)
+		admin.POST("/cases/give", adminInventoryHandlers.GiveCase)
 	}
 
 	// Health check endpoint

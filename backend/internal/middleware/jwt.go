@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -174,6 +175,7 @@ func RequireRoleMiddleware(allowedRoles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("user_role")
 		if !exists {
+			log.Printf("[RequireRoleMiddleware] No user_role in context, returning 401")
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error":   "unauthorized",
 				"message": "Authentication required",
@@ -183,6 +185,7 @@ func RequireRoleMiddleware(allowedRoles ...string) gin.HandlerFunc {
 		}
 
 		userRole := role.(string)
+		log.Printf("[RequireRoleMiddleware] User role: %s, allowed roles: %v", userRole, allowedRoles)
 
 		// Проверяем, есть ли роль пользователя в списке разрешённых
 		allowed := false
@@ -199,6 +202,7 @@ func RequireRoleMiddleware(allowedRoles ...string) gin.HandlerFunc {
 		}
 
 		if !allowed {
+			log.Printf("[RequireRoleMiddleware] Access denied for role %s", userRole)
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":          "forbidden",
 				"message":        "Insufficient permissions",

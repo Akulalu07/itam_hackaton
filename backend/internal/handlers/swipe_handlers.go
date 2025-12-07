@@ -58,7 +58,105 @@ func (s *Server) GetRecommendationsReal(c *gin.Context) {
 	// Build response with profile info
 	response := make([]gin.H, len(candidates))
 	for i, u := range candidates {
-		response[i] = gin.H{
+		// Получаем кастомизацию пользователя
+		var customization *models.ProfileCustomization
+		var profileCustom models.ProfileCustomization
+		if err := database.DB.Where("user_id = ?", u.ID).First(&profileCustom).Error; err == nil {
+			customization = &profileCustom
+		}
+
+		// Собираем данные об экипированных предметах
+		var customizationResponse *gin.H
+		if customization != nil {
+			cr := gin.H{}
+
+			// Загружаем предметы по ID
+			if customization.BackgroundID != nil {
+				var item models.CustomizationItem
+				if err := database.DB.Where("item_id = ?", *customization.BackgroundID).First(&item).Error; err == nil {
+					cr["background"] = gin.H{
+						"id":     item.ItemID,
+						"name":   item.Name,
+						"value":  item.Value,
+						"rarity": item.Rarity,
+					}
+				}
+			}
+
+			if customization.NameColorID != nil {
+				var item models.CustomizationItem
+				if err := database.DB.Where("item_id = ?", *customization.NameColorID).First(&item).Error; err == nil {
+					cr["nameColor"] = gin.H{
+						"id":     item.ItemID,
+						"name":   item.Name,
+						"value":  item.Value,
+						"rarity": item.Rarity,
+					}
+				}
+			}
+
+			if customization.AvatarFrameID != nil {
+				var item models.CustomizationItem
+				if err := database.DB.Where("item_id = ?", *customization.AvatarFrameID).First(&item).Error; err == nil {
+					cr["avatarFrame"] = gin.H{
+						"id":     item.ItemID,
+						"name":   item.Name,
+						"value":  item.Value,
+						"rarity": item.Rarity,
+					}
+				}
+			}
+
+			if customization.TitleID != nil {
+				var item models.CustomizationItem
+				if err := database.DB.Where("item_id = ?", *customization.TitleID).First(&item).Error; err == nil {
+					cr["title"] = gin.H{
+						"id":     item.ItemID,
+						"name":   item.Name,
+						"value":  item.Value,
+						"rarity": item.Rarity,
+					}
+				}
+			}
+
+			if customization.EffectID != nil {
+				var item models.CustomizationItem
+				if err := database.DB.Where("item_id = ?", *customization.EffectID).First(&item).Error; err == nil {
+					cr["effect"] = gin.H{
+						"id":     item.ItemID,
+						"name":   item.Name,
+						"value":  item.Value,
+						"rarity": item.Rarity,
+					}
+				}
+			}
+
+			// Бейджи
+			badges := []gin.H{}
+			badgeIDs := []*string{customization.Badge1ID, customization.Badge2ID, customization.Badge3ID}
+			for _, badgeID := range badgeIDs {
+				if badgeID != nil {
+					var item models.CustomizationItem
+					if err := database.DB.Where("item_id = ?", *badgeID).First(&item).Error; err == nil {
+						badges = append(badges, gin.H{
+							"id":     item.ItemID,
+							"name":   item.Name,
+							"value":  item.Value,
+							"rarity": item.Rarity,
+						})
+					}
+				}
+			}
+			if len(badges) > 0 {
+				cr["badges"] = badges
+			}
+
+			if len(cr) > 0 {
+				customizationResponse = &cr
+			}
+		}
+
+		responseItem := gin.H{
 			"id":          u.ID,
 			"name":        u.Name,
 			"username":    u.Username,
@@ -68,7 +166,16 @@ func (s *Server) GetRecommendationsReal(c *gin.Context) {
 			"lookingFor":  u.LookingFor,
 			"skillRating": u.SkillRating,
 			"tags":        u.Tags,
+			"avatarUrl":   u.AvatarURL,
+			"pts":         u.Pts,
+			"mmr":         u.Mmr,
 		}
+
+		if customizationResponse != nil {
+			responseItem["customization"] = customizationResponse
+		}
+
+		response[i] = responseItem
 	}
 
 	c.JSON(http.StatusOK, response)

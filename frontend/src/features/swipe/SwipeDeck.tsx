@@ -17,6 +17,7 @@ import { User } from '../../types';
 import { useSwipeStore, useTeamStore, useHackathonStore, useAuthStore } from '../../store/useStore';
 import { EmptyState } from '../../components/common';
 import { ROUTES } from '../../routes';
+import { getRarityColor } from '../../data/customization';
 
 // Skill level colors
 const skillLevelColors: Record<string, string> = {
@@ -47,6 +48,46 @@ interface SwipeCardProps {
  */
 function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
   const [expanded, setExpanded] = useState(false);
+  
+  // Получаем стили кастомизации
+  const customization = user.customization;
+  
+  // Фон карточки
+  const getBackgroundStyle = (): React.CSSProperties => {
+    if (!customization?.background) {
+      return {};
+    }
+    return {
+      background: customization.background.value,
+    };
+  };
+  
+  // Стиль имени
+  const getNameStyle = (): React.CSSProperties => {
+    if (!customization?.nameColor) return {};
+    const value = customization.nameColor.value;
+    if (value.startsWith('linear-gradient')) {
+      return {
+        background: value,
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        backgroundClip: 'text',
+      };
+    }
+    return { color: value };
+  };
+  
+  // Стиль рамки аватара
+  const getFrameStyle = (): React.CSSProperties => {
+    if (!customization?.avatarFrame) {
+      return {};
+    }
+    const frame = customization.avatarFrame;
+    // Применяем цвет рамки на основе редкости
+    return {
+      boxShadow: `0 0 0 3px ${getRarityColor(frame.rarity)}, 0 0 15px ${getRarityColor(frame.rarity)}50`,
+    };
+  };
 
   return (
     <TinderCard
@@ -61,20 +102,30 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
         className="card bg-base-200 w-full h-full shadow-xl overflow-hidden cursor-grab active:cursor-grabbing"
         style={style}
       >
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-transparent to-base-200 pointer-events-none" />
+        {/* Background gradient - с кастомизацией */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={customization?.background ? getBackgroundStyle() : undefined}
+        >
+          {!customization?.background && (
+            <div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-transparent to-base-200" />
+          )}
+        </div>
         
         {/* Avatar Section */}
         <div className="relative pt-6 px-6">
           <div className="flex items-start gap-4">
-            {/* Avatar */}
+            {/* Avatar с кастомной рамкой */}
             <div className="relative">
               <div className="avatar">
-                <div className="w-20 h-20 rounded-2xl ring-2 ring-primary ring-offset-2 ring-offset-base-200">
+                <div 
+                  className="w-20 h-20 rounded-2xl ring-2 ring-offset-2 ring-offset-base-200"
+                  style={customization?.avatarFrame ? getFrameStyle() : { boxShadow: '0 0 0 2px hsl(var(--p))' }}
+                >
                   {user.avatar ? (
-                    <img src={user.avatar} alt={user.name} />
+                    <img src={user.avatar} alt={user.name} className="rounded-2xl" />
                   ) : (
-                    <div className="bg-primary text-primary-content flex items-center justify-center text-2xl font-bold">
+                    <div className="bg-primary text-primary-content flex items-center justify-center text-2xl font-bold rounded-2xl w-full h-full">
                       {user.name?.charAt(0) || '?'}
                     </div>
                   )}
@@ -82,14 +133,42 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
               </div>
               {/* Online indicator */}
               <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-success rounded-full border-2 border-base-200" />
+              {/* Effect indicator */}
+              {customization?.effect && (
+                <div className="absolute -top-1 -right-1">
+                  <span className="relative flex h-4 w-4">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-4 w-4 bg-warning text-[10px] items-center justify-center">✨</span>
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Info */}
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-bold truncate">{user.name}</h2>
-              <p className={`text-sm font-medium ${titleColors[user.title] || 'text-base-content'}`}>
-                {user.title}
-              </p>
+              <h2 
+                className="text-xl font-bold truncate"
+                style={getNameStyle()}
+              >
+                {user.name}
+              </h2>
+              
+              {/* Custom Title or Default */}
+              {customization?.title ? (
+                <span 
+                  className="text-sm font-medium badge badge-sm"
+                  style={{ 
+                    backgroundColor: getRarityColor(customization.title.rarity) + '20',
+                    color: getRarityColor(customization.title.rarity)
+                  }}
+                >
+                  {customization.title.value}
+                </span>
+              ) : (
+                <p className={`text-sm font-medium ${titleColors[user.title] || 'text-base-content'}`}>
+                  {user.title}
+                </p>
+              )}
               
               {/* Stats */}
               <div className="flex items-center gap-3 mt-2">
@@ -107,8 +186,21 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
             </div>
           </div>
 
-          {/* NFT Stickers */}
-          {user.nftStickers && user.nftStickers.length > 0 && (
+          {/* Badges (кастомные бейджи или NFT стикеры) */}
+          {customization?.badges && customization.badges.length > 0 ? (
+            <div className="flex gap-2 mt-3">
+              {customization.badges.slice(0, 4).map(badge => (
+                <div 
+                  key={badge.id}
+                  className="w-10 h-10 rounded-lg flex items-center justify-center text-xl tooltip"
+                  style={{ backgroundColor: getRarityColor(badge.rarity) + '20' }}
+                  data-tip={badge.name}
+                >
+                  {badge.value}
+                </div>
+              ))}
+            </div>
+          ) : user.nftStickers && user.nftStickers.length > 0 ? (
             <div className="flex gap-2 mt-3">
               {user.nftStickers.slice(0, 4).map(sticker => (
                 <div 
@@ -120,7 +212,7 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Skills */}

@@ -7,7 +7,8 @@ import {
   BarChart3,
   LogOut,
   Moon,
-  Sun
+  Sun,
+  Gift
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../store/useStore';
 import { ROUTES } from '../routes';
@@ -22,7 +23,7 @@ export function AdminLayout() {
 
   const handleLogout = () => {
     logout();
-    navigate(ROUTES.ADMIN_LOGIN);
+    navigate('/');
   };
 
   const navItems = [
@@ -31,6 +32,7 @@ export function AdminLayout() {
     { to: ROUTES.ADMIN_PARTICIPANTS, icon: Users, label: 'Участники' },
     { to: ROUTES.ADMIN_TEAMS, icon: UsersRound, label: 'Команды' },
     { to: ROUTES.ADMIN_ANALYTICS, icon: BarChart3, label: 'Аналитика' },
+    { to: ROUTES.ADMIN_CASES, icon: Gift, label: 'Выдача кейсов' },
   ];
 
   return (

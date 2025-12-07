@@ -68,32 +68,46 @@ func (s *Server) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
 }
 
-// AdminLogin - админ авторизация
+// AdminLogin - админ авторизация (секретный вход)
+// @Summary Admin login
+// @Description Authenticate admin with password
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Param input body object{password=string} true "Admin password"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /admin/api/login [post]
 func (s *Server) AdminLogin(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email" binding:"required"`
 		Password string `json:"password" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password required"})
 		return
 	}
 
-	if req.Email != ADMINUSER && req.Password != ADMINPASS {
+	// Проверяем пароль
+	if req.Password != ADMINPASS {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 
-	token, _ := middleware.GenerateToken(0, 0, "admin")
+	// Генерируем JWT токен для админа
+	token, err := middleware.GenerateToken(0, 0, "admin")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
-			"id":    0,
-			"email": req.Email,
-			"role":  "admin",
-			"name":  "Administrator",
+			"id":   0,
+			"role": "admin",
+			"name": "Administrator",
 		},
 	})
 }
@@ -275,8 +289,37 @@ func (s *Server) GetAllUsers(c *gin.Context) {
 	var total int64
 	database.DB.Model(&models.User{}).Count(&total)
 
+	// Get customizations for all users
+	userIDs := make([]int64, len(users))
+	for i, u := range users {
+		userIDs[i] = u.ID
+	}
+
+	var customizations []models.ProfileCustomization
+	database.DB.Where("user_id IN ?", userIDs).Find(&customizations)
+
+	// Create a map for quick lookup
+	customizationMap := make(map[int64]*models.ProfileCustomization)
+	for i := range customizations {
+		customizationMap[customizations[i].UserID] = &customizations[i]
+	}
+
+	// Build response with customization
+	type UserWithCustomization struct {
+		models.User
+		Customization *models.ProfileCustomization `json:"customization,omitempty"`
+	}
+
+	usersWithCustomization := make([]UserWithCustomization, len(users))
+	for i, u := range users {
+		usersWithCustomization[i] = UserWithCustomization{
+			User:          u,
+			Customization: customizationMap[u.ID],
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"users": users,
+		"users": usersWithCustomization,
 		"total": total,
 		"page":  pageNum,
 		"limit": limitNum,
@@ -387,6 +430,96 @@ func (s *Server) GetMe(c *gin.Context) {
 		return
 	}
 
+	// Загружаем кастомизацию пользователя
+	var customizationResponse interface{}
+	var profileCustom models.ProfileCustomization
+	if err := database.DB.Where("user_id = ?", userID).First(&profileCustom).Error; err == nil {
+		cr := gin.H{}
+
+		// Загружаем предметы по ID
+		if profileCustom.BackgroundID != nil {
+			var item models.CustomizationItem
+			if err := database.DB.Where("item_id = ? AND user_id = ?", *profileCustom.BackgroundID, userID).First(&item).Error; err == nil {
+				cr["background"] = gin.H{
+					"id":     item.ItemID,
+					"name":   item.Name,
+					"value":  item.Value,
+					"rarity": item.Rarity,
+				}
+			}
+		}
+
+		if profileCustom.NameColorID != nil {
+			var item models.CustomizationItem
+			if err := database.DB.Where("item_id = ? AND user_id = ?", *profileCustom.NameColorID, userID).First(&item).Error; err == nil {
+				cr["nameColor"] = gin.H{
+					"id":     item.ItemID,
+					"name":   item.Name,
+					"value":  item.Value,
+					"rarity": item.Rarity,
+				}
+			}
+		}
+
+		if profileCustom.AvatarFrameID != nil {
+			var item models.CustomizationItem
+			if err := database.DB.Where("item_id = ? AND user_id = ?", *profileCustom.AvatarFrameID, userID).First(&item).Error; err == nil {
+				cr["avatarFrame"] = gin.H{
+					"id":     item.ItemID,
+					"name":   item.Name,
+					"value":  item.Value,
+					"rarity": item.Rarity,
+				}
+			}
+		}
+
+		if profileCustom.TitleID != nil {
+			var item models.CustomizationItem
+			if err := database.DB.Where("item_id = ? AND user_id = ?", *profileCustom.TitleID, userID).First(&item).Error; err == nil {
+				cr["title"] = gin.H{
+					"id":     item.ItemID,
+					"name":   item.Name,
+					"value":  item.Value,
+					"rarity": item.Rarity,
+				}
+			}
+		}
+
+		if profileCustom.EffectID != nil {
+			var item models.CustomizationItem
+			if err := database.DB.Where("item_id = ? AND user_id = ?", *profileCustom.EffectID, userID).First(&item).Error; err == nil {
+				cr["effect"] = gin.H{
+					"id":     item.ItemID,
+					"name":   item.Name,
+					"value":  item.Value,
+					"rarity": item.Rarity,
+				}
+			}
+		}
+
+		// Загружаем бейджи
+		var badges []gin.H
+		badgeIDs := []*string{profileCustom.Badge1ID, profileCustom.Badge2ID, profileCustom.Badge3ID}
+		for _, badgeID := range badgeIDs {
+			if badgeID != nil {
+				var item models.CustomizationItem
+				if err := database.DB.Where("item_id = ? AND user_id = ?", *badgeID, userID).First(&item).Error; err == nil {
+					badges = append(badges, gin.H{
+						"id":     item.ItemID,
+						"name":   item.Name,
+						"value":  item.Value,
+						"rarity": item.Rarity,
+					})
+				}
+			}
+		}
+		if len(badges) > 0 {
+			cr["badges"] = badges
+		}
+
+		customizationResponse = cr
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":                 user.ID,
 		"telegramId":         user.TelegramUserID,
@@ -406,6 +539,7 @@ func (s *Server) GetMe(c *gin.Context) {
 		"skillRating":        user.SkillRating,
 		"pts":                user.Pts,
 		"mmr":                user.Mmr,
+		"customization":      customizationResponse,
 	})
 }
 

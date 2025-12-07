@@ -14,6 +14,7 @@ export const ROUTES = {
   PROFILE: '/profile',
   PROFILE_EDIT: '/profile/edit',
   SKILL_TESTS: '/skill-tests',
+  INVENTORY: '/inventory',
   
   // Captain routes
   CREATE_TEAM: '/team/create',
@@ -26,6 +27,7 @@ export const ROUTES = {
   
   // Admin routes
   ADMIN_LOGIN: '/admin/login',
+  ADMIN_PASSWORD: '/admin/password',
   ADMIN_DASHBOARD: '/admin/dashboard',
   ADMIN_HACKATHONS: '/admin/hackathons',
   ADMIN_HACKATHON_CREATE: '/admin/hackathons/create',
@@ -33,6 +35,7 @@ export const ROUTES = {
   ADMIN_PARTICIPANTS: '/admin/participants',
   ADMIN_TEAMS: '/admin/teams',
   ADMIN_ANALYTICS: '/admin/analytics',
+  ADMIN_CASES: '/admin/cases',
 } as const;
 
 export type RouteKey = keyof typeof ROUTES;
