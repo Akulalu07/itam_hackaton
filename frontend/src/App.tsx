@@ -18,6 +18,7 @@ import {
   TeamPage,
   TeamManagePage,
   InvitesPage,
+  SkillTestsPage,
   AdminDashboardPage,
   AdminHackathonsPage,
   AdminHackathonCreatePage,
@@ -98,6 +99,9 @@ function App() {
             {/* Profile */}
             <Route path={ROUTES.PROFILE} element={<ProfilePage />} />
             <Route path={ROUTES.PROFILE_EDIT} element={<ProfileEditPage />} />
+            
+            {/* Skill Tests */}
+            <Route path={ROUTES.SKILL_TESTS} element={<SkillTestsPage />} />
             
             {/* Team Creation (becomes Captain) */}
             <Route path={ROUTES.CREATE_TEAM} element={<CreateTeamPage />} />

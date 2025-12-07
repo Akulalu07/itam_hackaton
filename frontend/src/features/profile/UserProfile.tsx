@@ -9,7 +9,8 @@ import {
   ChevronRight,
   Settings,
   LogOut,
-  Share2
+  Share2,
+  BookCheck
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useStore';
 import { ROUTES } from '../../routes';
@@ -17,6 +18,7 @@ import { Badge, getTitleVariant } from '../../components/gamification/Badge';
 import { StickerShowcase } from '../../components/gamification/StickerSlot';
 import { Portfolio } from '../../components/gamification/Portfolio';
 import { QuizFlow } from '../../components/gamification/QuizFlow';
+import { getTestBySkill } from '../../data/skillTests';
 
 /**
  * UserProfile - Полный профиль пользователя с gamification элементами
@@ -184,24 +186,44 @@ export function UserProfile() {
             {/* Skills */}
             <div className="card bg-base-200">
               <div className="card-body p-4">
-                <h3 className="font-semibold mb-3">Навыки</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold">Навыки</h3>
+                  <button 
+                    onClick={() => navigate(ROUTES.SKILL_TESTS)}
+                    className="btn btn-ghost btn-xs"
+                  >
+                    Подтвердить навык
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  {user.skills.map(skill => (
-                    <span 
-                      key={skill.id}
-                      className={`badge badge-lg ${
-                        skill.level === 'expert' ? 'badge-warning' :
-                        skill.level === 'advanced' ? 'badge-success' :
-                        skill.level === 'intermediate' ? 'badge-info' : 'badge-ghost'
-                      }`}
-                    >
-                      {skill.name}
-                    </span>
-                  ))}
+                  {user.skills.map(skill => {
+                    const hasTest = !!getTestBySkill(skill.name);
+                    const isVerified = skill.verified;
+                    return (
+                      <button 
+                        key={skill.id}
+                        onClick={() => hasTest && navigate(`${ROUTES.SKILL_TESTS}?skill=${encodeURIComponent(skill.name)}`)}
+                        className={`badge badge-lg gap-1 ${
+                          skill.level === 'expert' ? 'badge-warning' :
+                          skill.level === 'advanced' ? 'badge-success' :
+                          skill.level === 'intermediate' ? 'badge-info' : 'badge-ghost'
+                        } ${hasTest ? 'cursor-pointer hover:opacity-80' : ''}`}
+                        title={isVerified ? 'Навык подтверждён' : hasTest ? 'Нажмите для прохождения теста' : ''}
+                      >
+                        {isVerified && <Star className="w-3 h-3" />}
+                        {skill.name}
+                      </button>
+                    );
+                  })}
                   {user.skills.length === 0 && (
                     <p className="text-base-content/60 text-sm">Навыки не указаны</p>
                   )}
                 </div>
+                {user.skills.some(s => !s.verified && getTestBySkill(s.name)) && (
+                  <p className="text-xs text-base-content/60 mt-2">
+                    💡 Нажмите на навык, чтобы подтвердить его тестом
+                  </p>
+                )}
               </div>
             </div>
 
@@ -226,6 +248,17 @@ export function UserProfile() {
                 <ChevronRight className="w-5 h-5" />
               </button>
               
+              <button 
+                onClick={() => navigate(ROUTES.SKILL_TESTS)}
+                className="btn btn-ghost justify-between w-full"
+              >
+                <span className="flex items-center gap-3">
+                  <BookCheck className="w-5 h-5" />
+                  Тесты на навыки
+                </span>
+                <ChevronRight className="w-5 h-5" />
+              </button>
+
               <button 
                 onClick={() => setShowQuiz(true)}
                 className="btn btn-ghost justify-between w-full"
