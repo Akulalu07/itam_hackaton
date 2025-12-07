@@ -4,6 +4,7 @@ import { Loader2, CheckCircle, XCircle, ArrowLeft, Copy, Check } from 'lucide-re
 import { useAuthStore } from '../../store/useStore';
 import { ROUTES } from '../../routes';
 import axiosClient from '../../api/axiosClient';
+import { transformUserFromBackend } from '../../api/services';
 
 const TELEGRAM_BOT_USERNAME = 'itam_chan_bot';
 
@@ -55,28 +56,20 @@ export function TokenAuthPage() {
         // Сохраняем JWT токен
         setToken(response.data.token);
         
-        // Сохраняем данные пользователя, сохраняя локальные pts/mmr если они есть
+        // Используем transformUserFromBackend для правильного преобразования данных
+        // (включая skills из строкового массива в объекты UserSkill)
+        const transformedUser = transformUserFromBackend(response.data.user);
+        
+        // Сохраняем данные пользователя, сохраняя локальные pts/mmr если они выше
         const localPts = currentUser?.pts || 0;
         const localMmr = currentUser?.mmr || 0;
-        const serverPts = response.data.user.pts || 0;
-        const serverMmr = response.data.user.mmr || response.data.user.skillRating || 0;
         
         setUser({
-          id: response.data.user.id.toString(),
-          name: response.data.user.name || response.data.name,
-          telegramId: response.data.user.telegramId?.toString(),
-          role: response.data.user.role || 'participant',
-          status: 'looking',
-          skills: response.data.user.skills || [],
-          experience: response.data.user.experience || '',
-          mmr: Math.max(localMmr, serverMmr, 1000),
-          pts: Math.max(localPts, serverPts),
-          title: 'Новичок',
-          nftStickers: [],
-          avatar: response.data.user.avatar || currentUser?.avatar,
-          bio: response.data.user.bio,
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          ...transformedUser,
+          mmr: Math.max(localMmr, transformedUser.mmr, 1000),
+          pts: Math.max(localPts, transformedUser.pts),
+          // Сохраняем локальный аватар если серверного нет
+          avatar: transformedUser.avatar || currentUser?.avatar,
         });
 
         setSuccess(true);

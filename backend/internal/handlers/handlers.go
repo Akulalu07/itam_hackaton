@@ -67,7 +67,7 @@ func takeToken(c *gin.Context) {
 	}
 
 	isNewUser := !userExists
-	
+
 	// Создаём или получаем пользователя
 	user, err := database.CreateUser(ctx, telegramUserID, name)
 	if err != nil {
@@ -107,7 +107,9 @@ func takeToken(c *gin.Context) {
 			"profileComplete": user.ProfileComplete,
 			"skills":          user.Skills,
 			"bio":             user.Bio,
+			"avatarUrl":       user.AvatarURL,
 			"experience":      user.Experience,
+			"lookingFor":      user.LookingFor,
 			"pts":             user.Pts,
 			"mmr":             user.Mmr,
 		},

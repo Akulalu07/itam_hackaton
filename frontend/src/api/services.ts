@@ -17,17 +17,26 @@ const mapBackendRole = (role: string): UserRole => {
 
 // Трансформирует строковые скиллы с бэкенда в объекты UserSkill
 const mapSkillsFromBackend = (skills: string[] | null | undefined): UserSkill[] => {
-  if (!skills || !Array.isArray(skills)) return [];
-  return skills.map((name, index) => ({
+  console.log('[DEBUG] mapSkillsFromBackend input:', skills, 'type:', typeof skills, 'isArray:', Array.isArray(skills));
+  if (!skills || !Array.isArray(skills)) {
+    console.log('[DEBUG] skills empty or not array, returning []');
+    return [];
+  }
+  const result = skills.map((name, index) => ({
     id: `skill-${index}`,
     name,
     level: 'intermediate' as const,
     category: 'other' as const,
   }));
+  console.log('[DEBUG] mapSkillsFromBackend output:', result);
+  return result;
 };
 
 // Трансформирует данные пользователя с бэкенда для фронтенда
-const transformUserFromBackend = (data: any): User => {
+// Экспортируется для использования в TokenAuthPage
+export const transformUserFromBackend = (data: any): User => {
+  console.log('[DEBUG] transformUserFromBackend input data:', data);
+  console.log('[DEBUG] data.skills:', data.skills);
   return {
     id: String(data.id),
     telegramId: data.telegramUserId ? String(data.telegramUserId) : (data.telegramId ? String(data.telegramId) : undefined),

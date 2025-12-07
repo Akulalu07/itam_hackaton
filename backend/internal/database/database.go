@@ -45,7 +45,7 @@ func Close() error {
 func AutoMigrate() error {
 	// Создаём таблицы если их нет, но не удаляем существующие constraints
 	migrator := DB.Migrator()
-	
+
 	// Миграция моделей по одной для лучшего контроля
 	modelsToMigrate := []interface{}{
 		&models.User{},
@@ -61,7 +61,7 @@ func AutoMigrate() error {
 		&models.Swipe{},
 		&models.Match{},
 	}
-	
+
 	for _, model := range modelsToMigrate {
 		if !migrator.HasTable(model) {
 			if err := DB.AutoMigrate(model); err != nil {
@@ -69,7 +69,7 @@ func AutoMigrate() error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -109,7 +109,7 @@ func CreateUser(ctx context.Context, telegramUserID int64, username string) (*mo
 	}).Error; err != nil {
 		return nil, err
 	}
-	
+
 	return &user, nil
 }
 

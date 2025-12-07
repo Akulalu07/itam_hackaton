@@ -26,9 +26,9 @@ type User struct {
 	Bio         string         `json:"bio"`
 	AvatarURL   string         `json:"avatarUrl"`
 	Skills      pq.StringArray `gorm:"type:text[]" json:"skills"`
-	Experience  string         `json:"experience"`                        // junior, middle, senior
-	LookingFor  pq.StringArray `gorm:"type:text[]" json:"lookingFor"`     // roles they want in team
-	ContactInfo string         `json:"contactInfo"`                       // telegram, email, etc.
+	Experience  string         `json:"experience"`                    // junior, middle, senior
+	LookingFor  pq.StringArray `gorm:"type:text[]" json:"lookingFor"` // roles they want in team
+	ContactInfo string         `json:"contactInfo"`                   // telegram, email, etc.
 
 	// Gamification fields
 	Pts int `gorm:"default:0" json:"pts"`    // Points - очки за активность
