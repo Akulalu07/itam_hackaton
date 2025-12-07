@@ -147,8 +147,16 @@ export function QuizFlow({ onComplete, onClose }: QuizFlowProps) {
         // Добавляем немного рандома для реалистичности
         totalPTS = Math.floor(totalPTS * (0.9 + Math.random() * 0.2));
         
+        // MMR (Matchmaking Rating) - рейтинг для подбора команд
+        // Базовый MMR = 1000, добавляем бонус на основе опыта
+        // MMR растёт медленнее чем PTS и не может быть меньше 1000
+        const mmrBonus = Math.floor(totalPTS * 0.3);
+        const newMmr = 1000 + mmrBonus;
+        
         setFinalPTS(totalPTS);
-        updateProfile({ pts: totalPTS, mmr: Math.floor(totalPTS * 0.8) });
+        // Обновляем и локально и на сервере
+        updateProfile({ pts: totalPTS, mmr: newMmr })
+          .catch(err => console.error('Failed to save PTS:', err));
         setIsCalculating(false);
       }, 2000);
     } else {

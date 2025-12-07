@@ -109,25 +109,36 @@ export const useAuthStore = create<AuthStore>()(
 
       updateProfile: async (data) => {
         set({ isLoading: true, error: null });
+        
+        // Сразу обновляем локально (особенно важно для pts/mmr)
+        const { user: currentUser } = get();
+        if (currentUser) {
+          const localUpdate = { 
+            ...currentUser, 
+            ...data,
+            title: getTitleByPoints(data.pts ?? currentUser.pts),
+          };
+          set({ user: localUpdate });
+        }
+        
         try {
-          // Преобразуем skills для бэкенда (массив имён)
-          const apiData: Record<string, unknown> = { ...data };
-          if (data.skills) {
-            apiData.skills = data.skills.map(s => typeof s === 'string' ? s : s.name);
-          }
-          
-          const updatedUser = await userService.updateProfile(apiData as any);
+          // userService.updateProfile уже делает преобразование данных
+          const updatedUser = await userService.updateProfile(data as any);
           set({ 
-            user: { ...updatedUser, title: getTitleByPoints(updatedUser.pts || 0) },
+            user: { ...updatedUser, title: getTitleByPoints(updatedUser.pts || data.pts || 0) },
             isLoading: false 
           });
         } catch (error) {
           console.error('Update profile error:', error);
+          // При ошибке оставляем локальные изменения (pts/mmr важнее)
           set({ 
             isLoading: false, 
             error: error instanceof Error ? error.message : 'Ошибка обновления профиля' 
           });
-          throw error;
+          // Не бросаем ошибку для pts/mmr - они уже сохранены локально
+          if (!data.pts && !data.mmr) {
+            throw error;
+          }
         }
       },
 
@@ -168,17 +179,25 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       fetchProfile: async () => {
-        const { token } = get();
+        const { token, user: currentUser } = get();
         if (!token) return;
         
         set({ isLoading: true, error: null });
         try {
-          const user = await userService.getProfile();
-          set({ user, isAuthenticated: true, isLoading: false });
+          const serverUser = await userService.getProfile();
+          // Сохраняем локальные pts/mmr если они больше серверных (сервер может не хранить pts)
+          const mergedUser = {
+            ...serverUser,
+            pts: Math.max(serverUser.pts || 0, currentUser?.pts || 0),
+            mmr: Math.max(serverUser.mmr || 0, currentUser?.mmr || 0),
+            avatar: serverUser.avatar || currentUser?.avatar,
+            title: getTitleByPoints(Math.max(serverUser.pts || 0, currentUser?.pts || 0)),
+          };
+          set({ user: mergedUser, isAuthenticated: true, isLoading: false });
         } catch (error) {
           console.error('Fetch profile error:', error);
-          // Если токен невалидный - логаут
-          get().logout();
+          // НЕ делаем logout при ошибке - сохраняем локальные данные
+          // Пользователь может быть оффлайн или сервер временно недоступен
           set({ isLoading: false });
         }
       },
@@ -188,7 +207,17 @@ export const useAuthStore = create<AuthStore>()(
     {
       name: 'itam-auth-storage',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ token: state.token }),
+      partialize: (state) => ({ 
+        token: state.token,
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      onRehydrateStorage: () => (state) => {
+        // После восстановления состояния синхронизируем токен
+        if (state?.token) {
+          tokenUtils.setToken(state.token);
+        }
+      },
     }
   )
 );

@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useStore';
 import { tokenUtils } from '../api/axiosClient';
@@ -20,6 +20,14 @@ interface PrivateRouteProps {
 export function PrivateRoute({ children, requiredRole }: PrivateRouteProps) {
   const { isAuthenticated, user, logout } = useAuthStore();
   const location = useLocation();
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Ждём пока Zustand восстановит состояние из localStorage
+  useEffect(() => {
+    // Небольшая задержка чтобы zustand persist успел восстановить состояние
+    const timer = setTimeout(() => setIsHydrated(true), 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Проверяем наличие токена в localStorage
   const token = tokenUtils.getToken();
@@ -27,11 +35,20 @@ export function PrivateRoute({ children, requiredRole }: PrivateRouteProps) {
 
   // Если токен отсутствует - разлогиниваем и редиректим
   useEffect(() => {
-    if (!hasValidToken && isAuthenticated) {
+    if (isHydrated && !hasValidToken && isAuthenticated) {
       // Токен был удалён (например, истёк) - разлогиниваем
       logout();
     }
-  }, [hasValidToken, isAuthenticated, logout]);
+  }, [hasValidToken, isAuthenticated, logout, isHydrated]);
+
+  // Показываем загрузку пока store не восстановлен
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+    );
+  }
 
   // STRICT CHECK: Нет токена ИЛИ не авторизован ИЛИ нет пользователя
   if (!hasValidToken || !isAuthenticated || !user) {
@@ -63,15 +80,29 @@ export function PrivateRoute({ children, requiredRole }: PrivateRouteProps) {
 export function AdminRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, user, logout } = useAuthStore();
   const location = useLocation();
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsHydrated(true), 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   const token = tokenUtils.getToken();
   const hasValidToken = !!token;
 
   useEffect(() => {
-    if (!hasValidToken && isAuthenticated) {
+    if (isHydrated && !hasValidToken && isAuthenticated) {
       logout();
     }
-  }, [hasValidToken, isAuthenticated, logout]);
+  }, [hasValidToken, isAuthenticated, logout, isHydrated]);
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+    );
+  }
 
   if (!hasValidToken || !isAuthenticated || !user) {
     return <Navigate to="/admin/login" state={{ from: location }} replace />;

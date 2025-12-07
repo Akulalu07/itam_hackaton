@@ -15,7 +15,7 @@ import { useAuthStore } from '../../store/useStore';
 import { ROUTES } from '../../routes';
 import { Badge, getTitleVariant } from '../../components/gamification/Badge';
 import { StickerShowcase } from '../../components/gamification/StickerSlot';
-import { Portfolio, mockHackathonHistory } from '../../components/gamification/Portfolio';
+import { Portfolio } from '../../components/gamification/Portfolio';
 import { QuizFlow } from '../../components/gamification/QuizFlow';
 
 /**
@@ -260,9 +260,9 @@ export function UserProfile() {
           </div>
         )}
 
-        {/* History tab */}
+        {/* History tab - показываем реальную историю (пустую для новых пользователей) */}
         {activeTab === 'history' && (
-          <Portfolio history={mockHackathonHistory} />
+          <Portfolio history={[]} />
         )}
       </div>
     </div>

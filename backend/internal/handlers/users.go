@@ -38,7 +38,8 @@ func registerUser(c *gin.Context) {
 		return
 	}
 
-	if err := database.CreateUser(ctx, req.TelegramUserID, req.Username); err != nil {
+	_, err = database.CreateUser(ctx, req.TelegramUserID, req.Username)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to register user",
 		})

@@ -1,5 +1,56 @@
 import axiosClient from './axiosClient';
-import { User, Hackathon, Team, Invite, UserSkill } from '../types';
+import { User, Hackathon, Team, Invite, UserSkill, UserRole, UserStatus, GamificationTitle } from '../types';
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+// Трансформирует роль с бэкенда в роль фронтенда
+const mapBackendRole = (role: string): UserRole => {
+  const roleMap: Record<string, UserRole> = {
+    'user': 'participant',
+    'hackathon_creator': 'captain',
+    'admin': 'admin',
+  };
+  return roleMap[role] || 'participant';
+};
+
+// Трансформирует строковые скиллы с бэкенда в объекты UserSkill
+const mapSkillsFromBackend = (skills: string[] | null | undefined): UserSkill[] => {
+  if (!skills || !Array.isArray(skills)) return [];
+  return skills.map((name, index) => ({
+    id: `skill-${index}`,
+    name,
+    level: 'intermediate' as const,
+    category: 'other' as const,
+  }));
+};
+
+// Трансформирует данные пользователя с бэкенда для фронтенда
+const transformUserFromBackend = (data: any): User => {
+  return {
+    id: String(data.id),
+    telegramId: data.telegramUserId ? String(data.telegramUserId) : (data.telegramId ? String(data.telegramId) : undefined),
+    name: data.name || data.username || 'Пользователь',
+    avatar: data.avatarUrl || data.avatar,
+    bio: data.bio || '',
+    role: mapBackendRole(data.role),
+    status: (data.teamId ? 'in_team' : 'looking') as UserStatus,
+    skills: mapSkillsFromBackend(data.skills),
+    experience: data.experience || '',
+    lookingFor: data.lookingFor || [],
+    contactInfo: data.contactInfo || '',
+    mmr: data.mmr || data.skillRating || 1000,
+    pts: data.pts || 0,
+    title: (data.title || 'Новичок') as GamificationTitle,
+    nftStickers: data.nftStickers || [],
+    currentHackathonId: data.currentHackathonId ? String(data.currentHackathonId) : undefined,
+    currentTeamId: data.teamId ? String(data.teamId) : undefined,
+    profileComplete: data.profileComplete || false,
+    createdAt: new Date(data.createdAt),
+    updatedAt: new Date(data.updatedAt),
+  };
+};
 
 // ============================================
 // USER SERVICE - Работа с профилем
@@ -11,31 +62,55 @@ export interface UpdateProfileData {
   skills?: UserSkill[];
   experience?: string;
   avatar?: string;
+  pts?: number;
+  mmr?: number;
+  lookingFor?: string[];
 }
+
+// Преобразует данные профиля для бэкенда
+const transformProfileForBackend = (data: UpdateProfileData) => {
+  const result: any = {};
+  
+  if (data.name !== undefined) result.name = data.name;
+  if (data.bio !== undefined) result.bio = data.bio;
+  if (data.experience !== undefined) result.experience = data.experience;
+  if (data.avatar !== undefined) result.avatarUrl = data.avatar;
+  if (data.pts !== undefined) result.pts = data.pts;
+  if (data.mmr !== undefined) result.mmr = data.mmr;
+  if (data.lookingFor !== undefined) result.lookingFor = data.lookingFor;
+  
+  // Преобразуем skills из UserSkill[] в string[]
+  if (data.skills !== undefined) {
+    result.skills = data.skills.map(s => s.name);
+  }
+  
+  return result;
+};
 
 export const userService = {
   /**
    * Получить текущий профиль пользователя
    */
   getProfile: async (): Promise<User> => {
-    const response = await axiosClient.get<User>('/api/users/me');
-    return response.data;
+    const response = await axiosClient.get('/api/users/me');
+    return transformUserFromBackend(response.data);
   },
 
   /**
    * Обновить профиль пользователя
    */
   updateProfile: async (data: UpdateProfileData): Promise<User> => {
-    const response = await axiosClient.patch<User>('/api/users/me/profile', data);
-    return response.data;
+    const backendData = transformProfileForBackend(data);
+    const response = await axiosClient.patch('/api/users/me/profile', backendData);
+    return transformUserFromBackend(response.data);
   },
 
   /**
    * Получить профиль пользователя по ID
    */
   getUserById: async (userId: string): Promise<User> => {
-    const response = await axiosClient.get<User>(`/api/users/${userId}`);
-    return response.data;
+    const response = await axiosClient.get(`/api/users/${userId}`);
+    return transformUserFromBackend(response.data);
   },
 
   /**

@@ -20,7 +20,7 @@ const TELEGRAM_BOT_USERNAME = 'itam_chan_bot';
 export function TokenAuthPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { setUser, setToken } = useAuthStore();
+  const { setUser, setToken, user: currentUser } = useAuthStore();
   
   const [tokenInput, setTokenInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -55,19 +55,26 @@ export function TokenAuthPage() {
         // Сохраняем JWT токен
         setToken(response.data.token);
         
-        // Сохраняем данные пользователя
+        // Сохраняем данные пользователя, сохраняя локальные pts/mmr если они есть
+        const localPts = currentUser?.pts || 0;
+        const localMmr = currentUser?.mmr || 0;
+        const serverPts = response.data.user.pts || 0;
+        const serverMmr = response.data.user.mmr || response.data.user.skillRating || 0;
+        
         setUser({
           id: response.data.user.id.toString(),
           name: response.data.user.name || response.data.name,
           telegramId: response.data.user.telegramId?.toString(),
           role: response.data.user.role || 'participant',
           status: 'looking',
-          skills: [],
-          experience: '',
-          mmr: 1000,
-          pts: 0,
+          skills: response.data.user.skills || [],
+          experience: response.data.user.experience || '',
+          mmr: Math.max(localMmr, serverMmr, 1000),
+          pts: Math.max(localPts, serverPts),
           title: 'Новичок',
           nftStickers: [],
+          avatar: response.data.user.avatar || currentUser?.avatar,
+          bio: response.data.user.bio,
           createdAt: new Date(),
           updatedAt: new Date(),
         });

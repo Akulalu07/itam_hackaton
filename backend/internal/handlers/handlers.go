@@ -67,22 +67,25 @@ func takeToken(c *gin.Context) {
 	}
 
 	isNewUser := !userExists
+	
+	// Создаём или получаем пользователя
+	user, err := database.CreateUser(ctx, telegramUserID, name)
+	if err != nil {
+		fmt.Printf("Error creating/getting user: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to register user",
+		})
+		return
+	}
 	if isNewUser {
-		if err := database.CreateUser(ctx, telegramUserID, name); err != nil {
-			fmt.Printf("Error creating user: %v\n", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to register user",
-			})
-			return
-		}
-		fmt.Printf("New user registered: %d (%s)\n", telegramUserID, name)
+		fmt.Printf("New user registered: %d (%s) with ID: %d\n", telegramUserID, name, user.ID)
 	}
 
 	// Delete the token from Redis after successful use
 	redisConn.Del(ctx, req.Token)
 
-	// Generate JWT token for the user
-	jwtToken, err := middleware.GenerateToken(telegramUserID, telegramUserID, "user")
+	// Generate JWT token for the user - используем реальный ID из базы!
+	jwtToken, err := middleware.GenerateToken(user.ID, telegramUserID, string(user.Role))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to generate auth token",
@@ -97,11 +100,16 @@ func takeToken(c *gin.Context) {
 		"isNewUser":  isNewUser,
 		"registered": isNewUser,
 		"user": gin.H{
-			"id":              telegramUserID,
+			"id":              user.ID,
 			"telegramId":      telegramUserID,
-			"name":            name,
-			"role":            "participant",
-			"profileComplete": false,
+			"name":            user.Name,
+			"role":            user.Role,
+			"profileComplete": user.ProfileComplete,
+			"skills":          user.Skills,
+			"bio":             user.Bio,
+			"experience":      user.Experience,
+			"pts":             user.Pts,
+			"mmr":             user.Mmr,
 		},
 	})
 }

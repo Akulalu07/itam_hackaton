@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft,
@@ -13,7 +13,8 @@ import {
   Users,
   Briefcase,
   Sparkles,
-  Loader2
+  Loader2,
+  Camera
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useStore';
 import { UserSkill, SkillLevel } from '../../types';
@@ -60,8 +61,9 @@ export function ProfilePage() {
   const [activeCategory, setActiveCategory] = useState<keyof typeof SKILL_PRESETS>('frontend');
   const [bio, setBio] = useState('');
   const [name, setName] = useState('');
-  const [contactInfo, setContactInfo] = useState('');
+  const [avatar, setAvatar] = useState<string | undefined>(undefined);
   const [hasChanges, setHasChanges] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Загрузить данные из профиля при монтировании
   useEffect(() => {
@@ -69,7 +71,7 @@ export function ProfilePage() {
       setName(user.name || '');
       setBio(user.bio || '');
       setSelectedExperience(user.experience || '');
-      setContactInfo(user.contactInfo || '');
+      setAvatar(user.avatar);
       setSelectedRole(user.lookingFor?.[0] || '');
       
       // Конвертируем skills
@@ -102,11 +104,11 @@ export function ProfilePage() {
       bio !== (user.bio || '') ||
       selectedExperience !== (user.experience || '') ||
       selectedRole !== (user.lookingFor?.[0] || '') ||
-      contactInfo !== (user.contactInfo || '') ||
+      avatar !== user.avatar ||
       skillNames !== originalSkillNames;
     
     setHasChanges(changed);
-  }, [name, bio, selectedExperience, selectedRole, contactInfo, skills, user]);
+  }, [name, bio, selectedExperience, selectedRole, avatar, skills, user]);
 
   // Add skill
   const addSkill = (skillName: string, category?: keyof typeof SKILL_PRESETS) => {
@@ -147,7 +149,7 @@ export function ProfilePage() {
         experience: selectedExperience,
         bio,
         lookingFor: selectedRole ? [selectedRole] : undefined,
-        contactInfo,
+        avatar,
       });
       
       setHasChanges(false);
@@ -187,6 +189,43 @@ export function ProfilePage() {
       </div>
 
       <div className="px-4 py-6 max-w-lg mx-auto space-y-8">
+        {/* Avatar */}
+        <section className="flex flex-col items-center">
+          <div className="relative">
+            <div className="avatar">
+              <div className="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                <img 
+                  src={avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`} 
+                  alt="Avatar" 
+                />
+              </div>
+            </div>
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute bottom-0 right-0 btn btn-primary btn-sm btn-circle shadow-lg"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    setAvatar(reader.result as string);
+                  };
+                  reader.readAsDataURL(file);
+                }
+              }}
+              className="hidden"
+            />
+          </div>
+          <p className="text-xs text-base-content/50 mt-2">Нажми чтобы изменить</p>
+        </section>
+
         {/* Name */}
         <section>
           <h2 className="text-lg font-semibold mb-3">Имя</h2>
@@ -357,20 +396,6 @@ export function ProfilePage() {
           <p className="text-xs text-base-content/50 text-right mt-1">{bio.length}/300</p>
         </section>
 
-        {/* Contact Info */}
-        <section>
-          <h2 className="text-lg font-semibold mb-3">Контакты</h2>
-          <input
-            type="text"
-            placeholder="@telegram или email"
-            value={contactInfo}
-            onChange={e => setContactInfo(e.target.value)}
-            className="input input-bordered w-full"
-          />
-          <p className="text-xs text-base-content/50 mt-1">
-            Будет виден только членам твоей команды
-          </p>
-        </section>
       </div>
     </div>
   );

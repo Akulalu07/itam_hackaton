@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 )
 
 // ============================================
@@ -394,6 +395,7 @@ func (s *Server) GetMe(c *gin.Context) {
 		"role":               user.Role,
 		"skills":             user.Skills,
 		"bio":                user.Bio,
+		"avatarUrl":          user.AvatarURL,
 		"experience":         user.Experience,
 		"lookingFor":         user.LookingFor,
 		"contactInfo":        user.ContactInfo,
@@ -402,6 +404,8 @@ func (s *Server) GetMe(c *gin.Context) {
 		"teamId":             user.TeamID,
 		"tags":               user.Tags,
 		"skillRating":        user.SkillRating,
+		"pts":                user.Pts,
+		"mmr":                user.Mmr,
 	})
 }
 
@@ -411,10 +415,13 @@ func (s *Server) UpdateProfile(c *gin.Context) {
 		Name        string   `json:"name"`
 		Skills      []string `json:"skills"`
 		Bio         string   `json:"bio"`
+		AvatarURL   string   `json:"avatarUrl"`
 		LookingFor  []string `json:"lookingFor"`
 		Experience  string   `json:"experience"`
 		ContactInfo string   `json:"contactInfo"`
 		Tags        []string `json:"tags"`
+		Pts         *int     `json:"pts"`
+		Mmr         *int     `json:"mmr"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -436,13 +443,16 @@ func (s *Server) UpdateProfile(c *gin.Context) {
 		updates["name"] = req.Name
 	}
 	if req.Skills != nil {
-		updates["skills"] = req.Skills
+		updates["skills"] = pq.StringArray(req.Skills)
 	}
 	if req.Bio != "" {
 		updates["bio"] = req.Bio
 	}
+	if req.AvatarURL != "" {
+		updates["avatar_url"] = req.AvatarURL
+	}
 	if req.LookingFor != nil {
-		updates["looking_for"] = req.LookingFor
+		updates["looking_for"] = pq.StringArray(req.LookingFor)
 	}
 	if req.Experience != "" {
 		updates["experience"] = req.Experience
@@ -451,7 +461,13 @@ func (s *Server) UpdateProfile(c *gin.Context) {
 		updates["contact_info"] = req.ContactInfo
 	}
 	if req.Tags != nil {
-		updates["tags"] = req.Tags
+		updates["tags"] = pq.StringArray(req.Tags)
+	}
+	if req.Pts != nil {
+		updates["pts"] = *req.Pts
+	}
+	if req.Mmr != nil {
+		updates["mmr"] = *req.Mmr
 	}
 
 	// Mark profile as complete if basic info is provided
@@ -472,11 +488,14 @@ func (s *Server) UpdateProfile(c *gin.Context) {
 		"name":            user.Name,
 		"skills":          user.Skills,
 		"bio":             user.Bio,
+		"avatarUrl":       user.AvatarURL,
 		"lookingFor":      user.LookingFor,
 		"experience":      user.Experience,
 		"contactInfo":     user.ContactInfo,
 		"profileComplete": user.ProfileComplete,
 		"tags":            user.Tags,
+		"pts":             user.Pts,
+		"mmr":             user.Mmr,
 	})
 }
 
