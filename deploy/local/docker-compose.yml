@@ -46,11 +46,13 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    networks:
+      - default
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   tgbot:
     build:
@@ -62,8 +64,11 @@ services:
     environment:
       TELOXIDE_TOKEN: ${TELOXIDE_TOKEN}
     restart: unless-stopped
+    networks:
+      - default
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
   frontend:
     build:
@@ -73,6 +78,8 @@ services:
     ports:
       - "80:80"
     restart: unless-stopped
+    networks:
+      - default
     depends_on:
       - backend
 

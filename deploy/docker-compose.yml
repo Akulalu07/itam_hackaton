@@ -36,7 +36,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    restart: unless-stoppeds
+    restart: unless-stopped
 
   backend:
     image: ghcr.io/akulalu07/itam_hackaton-backend:latest
@@ -46,11 +46,13 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    networks:
+      - default
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   tgbot:
     image: ghcr.io/akulalu07/itam_hackaton-tgbot:latest
@@ -59,8 +61,11 @@ services:
     environment:
       TELOXIDE_TOKEN: ${TELOXIDE_TOKEN}
     restart: unless-stopped
+    networks:
+      - default
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
   frontend:
     image: ghcr.io/akulalu07/itam_hackaton-frontend:latest
@@ -68,6 +73,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    restart: unless-stopped
+    networks:
+      - default
     depends_on:
       - backend
       - tgbot
