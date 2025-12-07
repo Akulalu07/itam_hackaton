@@ -192,6 +192,8 @@ export const useAuthStore = create<AuthStore>()(
             mmr: Math.max(serverUser.mmr || 0, currentUser?.mmr || 0),
             avatar: serverUser.avatar || currentUser?.avatar,
             title: getTitleByPoints(Math.max(serverUser.pts || 0, currentUser?.pts || 0)),
+            // Важно: сохраняем кастомизацию с сервера
+            customization: serverUser.customization,
           };
           set({ user: mergedUser, isAuthenticated: true, isLoading: false });
         } catch (error) {
@@ -909,7 +911,7 @@ export const useInventoryStore = create<InventoryStore>()(
             equip: true,
           });
           
-          // Обновляем локальное состояние
+          // Обновляем локальное состояние inventory store
           set(state => {
             const newCustomization = { ...state.customization };
             
@@ -942,6 +944,40 @@ export const useInventoryStore = create<InventoryStore>()(
               isLoading: false,
             };
           });
+          
+          // Также обновляем auth store с кастомизацией пользователя
+          const authStore = useAuthStore.getState();
+          if (authStore.user) {
+            const currentCustomization = authStore.user.customization || { badges: [], showcaseAchievements: [] };
+            const newUserCustomization: ProfileCustomization = { 
+              ...currentCustomization,
+              badges: currentCustomization.badges || [],
+              showcaseAchievements: currentCustomization.showcaseAchievements || [],
+            };
+            switch (item.type) {
+              case 'background':
+                newUserCustomization.background = item;
+                break;
+              case 'nameColor':
+                newUserCustomization.nameColor = item;
+                break;
+              case 'avatarFrame':
+                newUserCustomization.avatarFrame = item;
+                break;
+              case 'title':
+                newUserCustomization.title = item;
+                break;
+              case 'effect':
+                newUserCustomization.effect = item;
+                break;
+              case 'badge':
+                if (!newUserCustomization.badges.find(b => b.id === item.id) && newUserCustomization.badges.length < 3) {
+                  newUserCustomization.badges = [...newUserCustomization.badges, item];
+                }
+                break;
+            }
+            authStore.updateProfileLocal({ customization: newUserCustomization });
+          }
         } catch (error) {
           console.error('Equip item error:', error);
           set({

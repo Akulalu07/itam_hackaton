@@ -75,8 +75,17 @@ export function CaseOpening({ caseItem, onComplete, onClose }: CaseOpeningProps)
       setStage('spinning');
       
       // Анимация прокрутки
-      const itemWidth = 120;
-      const targetPosition = 45 * itemWidth - 200;
+      // Каждый предмет: w-28 (112px) + gap-2 (8px) = 120px
+      // Финальный предмет на позиции 45
+      // Нужно чтобы центр предмета 45 был в центре контейнера
+      // Контейнер примерно 800px (max-w-4xl), центр = 400px
+      // Центр предмета 45 = 45 * 120 + 60 (половина предмета) = 5460px
+      // Смещение = -(5460 - 400) = -5060px
+      const itemWidth = 120; // w-28 + gap
+      const targetIndex = 45;
+      const containerCenter = 400; // примерный центр контейнера
+      const itemCenter = targetIndex * itemWidth + itemWidth / 2;
+      const targetPosition = itemCenter - containerCenter;
       
       setTimeout(() => {
         setSpinOffset(-targetPosition);

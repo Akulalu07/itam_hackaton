@@ -9,12 +9,27 @@ use teloxide::prelude::*;
 async fn main() {
     dotenvy::dotenv().ok();
 
-    // Initialize logger
+    // Initialize logger with default level
+    // SAFETY: This is called at the start of main, before any other threads are spawned
+    unsafe {
+        if std::env::var("RUST_LOG").is_err() {
+            std::env::set_var("RUST_LOG", "info");
+        }
+    }
     pretty_env_logger::init();
 
+    eprintln!("[TGBOT] Starting bot...");
     log::info!("Starting bot..");
 
-    let bot = Bot::from_env();
+    // Check for token
+    let token = std::env::var("TELOXIDE_TOKEN").unwrap_or_else(|_| {
+        eprintln!("[TGBOT] ERROR: TELOXIDE_TOKEN is not set!");
+        std::process::exit(1);
+    });
+    eprintln!("[TGBOT] Token found: {}...", &token[..20.min(token.len())]);
+
+    let bot = Bot::new(token);
+    eprintln!("[TGBOT] Bot created successfully");
     log::info!("Bot created successfully");
 
     // Start notification stream consumer
