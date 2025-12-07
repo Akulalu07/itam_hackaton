@@ -20,6 +20,9 @@ pub struct AuthorizedUser {
 }
 
 /// Consumes notifications from Redis stream and sends them to Telegram users
+/// 
+/// Reads from the "notifications" Redis stream and processes notification messages.
+/// Each message should contain a "data" field with JSON containing a "message" field.
 pub async fn consume_notifications_stream(bot: Bot) -> Result<()> {
     use ::redis::streams::StreamReadOptions;
     use ::redis::AsyncCommands;
