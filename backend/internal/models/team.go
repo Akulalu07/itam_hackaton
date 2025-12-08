@@ -19,6 +19,12 @@ type Team struct {
 	Status      TeamStatus `gorm:"type:varchar(20);default:'looking'" json:"status"`
 	InviteCode  *string    `gorm:"type:varchar(20);uniqueIndex" json:"inviteCode,omitempty"`
 
+	// Customization fields
+	Background  *string `gorm:"type:varchar(100)" json:"background,omitempty"` // CSS gradient/color
+	BorderColor *string `gorm:"type:varchar(50)" json:"borderColor,omitempty"` // Border color
+	NameColor   *string `gorm:"type:varchar(100)" json:"nameColor,omitempty"`  // Name color/gradient
+	AvatarUrl   *string `gorm:"type:text" json:"avatarUrl,omitempty"`          // Team avatar
+
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
 }
 type TeamJoinRequest struct {

@@ -72,6 +72,14 @@ func StartServer() {
 		// Public customization endpoint for SwipeCard display
 		inventoryHandlersPublic := NewInventoryHandlers(db)
 		public.GET("/users/:id/customization", inventoryHandlersPublic.GetUserCustomization)
+
+		// Bot API - notification settings by telegram ID
+		public.GET("/bot/notifications/:telegramId", getBotNotificationSettings)
+		public.PUT("/bot/notifications/:telegramId", updateBotNotificationSettings)
+
+		// Bot API - invite accept/decline by telegram ID
+		public.POST("/bot/invites/:id/accept", server.BotAcceptInvite)
+		public.POST("/bot/invites/:id/decline", server.BotDeclineInvite)
 	}
 
 	// Admin login (separate)
@@ -94,10 +102,24 @@ func StartServer() {
 		// Recommendations & Swipe
 		protected.GET("/recommendations", server.GetRecommendations)
 		protected.POST("/swipe", server.Swipe)
+		protected.GET("/swipe/preferences", server.GetSwipePreferences)
+		protected.PUT("/swipe/preferences", server.UpdateSwipePreferences)
+		protected.GET("/matches", server.GetMatches)
+
+		// Notifications (user-specific)
+		protected.GET("/notifications", server.GetMyNotifications)
+		protected.GET("/notifications/unread-count", server.GetUnreadCount)
+		protected.POST("/notifications/:id/read", server.MarkNotificationRead)
+		protected.POST("/notifications/read-all", server.MarkAllNotificationsRead)
+		protected.GET("/notifications/settings", server.GetNotificationSettings)
+		protected.PUT("/notifications/settings", server.UpdateNotificationSettings)
 
 		// Teams
 		protected.GET("/teams", server.GetTeams)
+		protected.GET("/teams/public", server.GetPublicTeams)
 		protected.GET("/teams/my", server.GetMyTeam)
+		protected.GET("/teams/balance", server.GetTeamBalance)
+		protected.GET("/teams/compatibility", server.GetCandidateCompatibility)
 		protected.POST("/teams", server.CreateTeam)
 		protected.PUT("/teams/:id", server.UpdateTeam)
 		protected.POST("/teams/:id/leave", server.LeaveTeam)
@@ -105,6 +127,13 @@ func StartServer() {
 		protected.PUT("/teams/:id/status", server.UpdateTeamStatus)
 		protected.POST("/teams/:id/invite-link", server.GenerateInviteLink)
 		protected.POST("/teams/join", server.JoinTeamByCode)
+
+		// Team Join Requests
+		protected.POST("/teams/:id/request-join", server.RequestJoinTeam)
+		protected.GET("/teams/:id/join-requests", server.GetTeamJoinRequests)
+		protected.POST("/join-requests/:requestId/handle", server.HandleJoinRequest)
+		protected.GET("/my-join-requests", server.GetMyJoinRequests)
+		protected.DELETE("/join-requests/:requestId", server.CancelJoinRequest)
 
 		// Invites
 		protected.GET("/invites/incoming", server.GetIncomingInvites)

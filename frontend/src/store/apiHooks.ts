@@ -359,7 +359,7 @@ export const useTeamAPI = () => {
     }
   };
   
-  const updateTeamStatus = async (teamId: string, status: 'open' | 'closed') => {
+  const updateTeamStatus = async (teamId: string, status: 'looking' | 'closed') => {
     try {
       const updatedTeam = await teamService.updateStatus(teamId, status);
       

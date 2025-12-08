@@ -469,7 +469,7 @@ interface TeamStore {
   leaveTeam: (teamId: string) => Promise<void>;
   kickMember: (teamId: string, userId: string) => Promise<void>;
   setCurrentTeam: (team: Team | null) => void;
-  updateTeamStatus: (teamId: string, status: 'open' | 'closed') => Promise<void>;
+  updateTeamStatus: (teamId: string, status: 'looking' | 'closed') => Promise<void>;
 }
 
 export const useTeamStore = create<TeamStore>((set) => ({
@@ -498,7 +498,10 @@ export const useTeamStore = create<TeamStore>((set) => ({
     try {
       const team = await teamService.getMyTeam();
       if (team) {
-        const members = team.members?.map(m => m.user) || [];
+        // API returns members as User[] directly, not TeamMember[]
+        const members = Array.isArray(team.members) 
+          ? (team.members[0]?.user ? team.members.map(m => m.user) : team.members as unknown as User[])
+          : [];
         set({ currentTeam: team, teamMembers: members, isLoading: false });
       } else {
         set({ currentTeam: null, teamMembers: [], isLoading: false });
@@ -518,7 +521,10 @@ export const useTeamStore = create<TeamStore>((set) => ({
         description: data.description,
       });
       
-      const members = newTeam.members?.map(m => m.user) || [];
+      // API returns members as User[] directly
+      const members = Array.isArray(newTeam.members) 
+        ? (newTeam.members[0]?.user ? newTeam.members.map(m => m.user) : newTeam.members as unknown as User[])
+        : [];
       set(state => ({ 
         teams: [...state.teams, newTeam],
         currentTeam: newTeam,
@@ -548,7 +554,10 @@ export const useTeamStore = create<TeamStore>((set) => ({
         team = await teamService.getById(teamId);
       }
       
-      const members = team.members?.map(m => m.user) || [];
+      // API returns members as User[] directly
+      const members = Array.isArray(team.members) 
+        ? (team.members[0]?.user ? team.members.map(m => m.user) : team.members as unknown as User[])
+        : [];
       set(state => ({
         teams: state.teams.map(t => t.id === teamId ? team : t),
         currentTeam: team,
@@ -605,17 +614,24 @@ export const useTeamStore = create<TeamStore>((set) => ({
   },
 
   setCurrentTeam: (team) => {
-    const members = team?.members?.map(m => m.user) || [];
+    // API returns members as User[] directly
+    const members = Array.isArray(team?.members) 
+      ? (team?.members[0]?.user ? team.members.map(m => m.user) : team.members as unknown as User[])
+      : [];
     set({ currentTeam: team, teamMembers: members });
   },
 
   updateTeamStatus: async (teamId, status) => {
     set({ isLoading: true, error: null });
     try {
-      const updated = await teamService.updateStatus(teamId, status);
+      await teamService.updateStatus(teamId, status);
+      // Не заменяем весь объект currentTeam, а только обновляем статус,
+      // чтобы не потерять members и другие локальные данные
       set(state => ({
-        teams: state.teams.map(t => t.id === teamId ? updated : t),
-        currentTeam: state.currentTeam?.id === teamId ? updated : state.currentTeam,
+        teams: state.teams.map(t => t.id === teamId ? { ...t, status } : t),
+        currentTeam: state.currentTeam?.id === teamId 
+          ? { ...state.currentTeam, status } 
+          : state.currentTeam,
         isLoading: false,
       }));
     } catch (error) {

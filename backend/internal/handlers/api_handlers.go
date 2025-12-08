@@ -168,15 +168,92 @@ func (s *Server) JoinTeamByCode(c *gin.Context) {
 // INVITES
 // ============================================
 
+// GetIncomingInvites - получить входящие приглашения в команды
 func (s *Server) GetIncomingInvites(c *gin.Context) {
-	c.JSON(http.StatusOK, []gin.H{})
+	userID, _ := middleware.GetUserID(c)
+
+	var invites []models.TeamInvite
+	if err := database.DB.Where("invited_user_id = ? AND status = ?", userID, "pending").Find(&invites).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch invites"})
+		return
+	}
+
+	// Build response with team and inviter details
+	response := make([]gin.H, len(invites))
+	for i, invite := range invites {
+		var team models.Team
+		var inviter models.User
+		database.DB.First(&team, invite.TeamID)
+		database.DB.First(&inviter, invite.InviterID)
+
+		// Get team captain
+		var captain models.User
+		database.DB.First(&captain, team.CaptainID)
+
+		response[i] = gin.H{
+			"id":        invite.ID,
+			"teamId":    invite.TeamID,
+			"status":    invite.Status,
+			"createdAt": invite.CreatedAt,
+			"team": gin.H{
+				"id":          team.ID,
+				"name":        team.Name,
+				"description": team.Description,
+				"captain":     captain,
+			},
+			"fromUser": gin.H{
+				"id":     inviter.ID,
+				"name":   inviter.Name,
+				"avatar": inviter.AvatarURL,
+			},
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
+// GetOutgoingInvites - получить отправленные приглашения
 func (s *Server) GetOutgoingInvites(c *gin.Context) {
-	c.JSON(http.StatusOK, []gin.H{})
+	userID, _ := middleware.GetUserID(c)
+
+	var invites []models.TeamInvite
+	if err := database.DB.Where("inviter_id = ?", userID).Find(&invites).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch invites"})
+		return
+	}
+
+	// Build response with team and invited user details
+	response := make([]gin.H, len(invites))
+	for i, invite := range invites {
+		var team models.Team
+		var invitedUser models.User
+		database.DB.First(&team, invite.TeamID)
+		database.DB.First(&invitedUser, invite.InvitedUserID)
+
+		response[i] = gin.H{
+			"id":        invite.ID,
+			"teamId":    invite.TeamID,
+			"status":    invite.Status,
+			"createdAt": invite.CreatedAt,
+			"team": gin.H{
+				"id":   team.ID,
+				"name": team.Name,
+			},
+			"toUser": gin.H{
+				"id":     invitedUser.ID,
+				"name":   invitedUser.Name,
+				"avatar": invitedUser.AvatarURL,
+			},
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
+// SendInvite - отправить приглашение в команду
 func (s *Server) SendInvite(c *gin.Context) {
+	userID, _ := middleware.GetUserID(c)
+
 	var req struct {
 		ToUserID string `json:"toUserId" binding:"required"`
 		TeamID   string `json:"teamId" binding:"required"`
@@ -188,24 +265,338 @@ func (s *Server) SendInvite(c *gin.Context) {
 		return
 	}
 
+	// Parse IDs
+	teamID, err := strconv.ParseInt(req.TeamID, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid team ID"})
+		return
+	}
+	toUserID, err := strconv.ParseInt(req.ToUserID, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	// Check team exists and user is captain
+	var team models.Team
+	if err := database.DB.First(&team, teamID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
+		return
+	}
+
+	if team.CaptainID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only captain can send invites"})
+		return
+	}
+
+	// Check target user exists
+	var targetUser models.User
+	if err := database.DB.First(&targetUser, toUserID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	// Check if invite already exists
+	var existingInvite models.TeamInvite
+	if err := database.DB.Where("team_id = ? AND invited_user_id = ? AND status = ?", teamID, toUserID, "pending").First(&existingInvite).Error; err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "invite already sent"})
+		return
+	}
+
+	// Create invite
+	invite := models.TeamInvite{
+		TeamID:        teamID,
+		InvitedUserID: toUserID,
+		InviterID:     userID,
+		Status:        "pending",
+	}
+	if err := database.DB.Create(&invite).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create invite"})
+		return
+	}
+
+	// Get inviter info
+	var inviter models.User
+	database.DB.First(&inviter, userID)
+
+	// Send notification
+	go s.sendTeamInviteNotification(team, inviter, targetUser, invite.ID)
+
 	c.JSON(http.StatusCreated, gin.H{
-		"id":       "invite-1",
-		"teamId":   req.TeamID,
-		"toUserId": req.ToUserID,
-		"status":   "pending",
+		"id":       invite.ID,
+		"teamId":   invite.TeamID,
+		"toUserId": invite.InvitedUserID,
+		"status":   invite.Status,
 	})
 }
 
+// AcceptInvite - принять приглашение в команду
 func (s *Server) AcceptInvite(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "invite accepted"})
+	userID, _ := middleware.GetUserID(c)
+	inviteIDStr := c.Param("id")
+
+	inviteID, err := strconv.ParseInt(inviteIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite ID"})
+		return
+	}
+
+	// Find invite
+	var invite models.TeamInvite
+	if err := database.DB.First(&invite, inviteID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "invite not found"})
+		return
+	}
+
+	// Check it's for this user
+	if invite.InvitedUserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not your invite"})
+		return
+	}
+
+	if invite.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invite already processed"})
+		return
+	}
+
+	// Get team
+	var team models.Team
+	if err := database.DB.First(&team, invite.TeamID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
+		return
+	}
+
+	// Add user to team
+	if err := database.DB.Model(&models.User{}).Where("id = ?", userID).Update("team_id", team.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to join team"})
+		return
+	}
+
+	// Update invite status
+	database.DB.Model(&invite).Update("status", "accepted")
+
+	// Update hackathon participant status if exists
+	database.DB.Model(&models.HackathonParticipant{}).
+		Where("user_id = ? AND hackathon_id = ?", userID, team.HackathonID).
+		Update("status", "in_team")
+
+	// Notify inviter
+	var inviter models.User
+	database.DB.First(&inviter, invite.InviterID)
+	var user models.User
+	database.DB.First(&user, userID)
+
+	go s.sendInviteResponseNotification(team, user, inviter, true)
+
+	c.JSON(http.StatusOK, gin.H{"message": "invite accepted", "teamId": team.ID})
 }
 
+// DeclineInvite - отклонить приглашение в команду
 func (s *Server) DeclineInvite(c *gin.Context) {
+	userID, _ := middleware.GetUserID(c)
+	inviteIDStr := c.Param("id")
+
+	inviteID, err := strconv.ParseInt(inviteIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite ID"})
+		return
+	}
+
+	// Find invite
+	var invite models.TeamInvite
+	if err := database.DB.First(&invite, inviteID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "invite not found"})
+		return
+	}
+
+	// Check it's for this user
+	if invite.InvitedUserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not your invite"})
+		return
+	}
+
+	if invite.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invite already processed"})
+		return
+	}
+
+	// Update invite status
+	database.DB.Model(&invite).Update("status", "declined")
+
+	// Notify inviter
+	var team models.Team
+	var inviter models.User
+	var user models.User
+	database.DB.First(&team, invite.TeamID)
+	database.DB.First(&inviter, invite.InviterID)
+	database.DB.First(&user, userID)
+
+	go s.sendInviteResponseNotification(team, user, inviter, false)
+
 	c.JSON(http.StatusOK, gin.H{"message": "invite declined"})
 }
 
+// CancelInvite - отменить приглашение (капитаном)
 func (s *Server) CancelInvite(c *gin.Context) {
+	userID, _ := middleware.GetUserID(c)
+	inviteIDStr := c.Param("id")
+
+	inviteID, err := strconv.ParseInt(inviteIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite ID"})
+		return
+	}
+
+	// Find invite
+	var invite models.TeamInvite
+	if err := database.DB.First(&invite, inviteID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "invite not found"})
+		return
+	}
+
+	// Check user is inviter
+	if invite.InviterID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only inviter can cancel"})
+		return
+	}
+
+	if invite.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invite already processed"})
+		return
+	}
+
+	// Delete invite
+	database.DB.Delete(&invite)
+
 	c.JSON(http.StatusOK, gin.H{"message": "invite cancelled"})
+}
+
+// BotAcceptInvite - принять приглашение через бота (по telegramId)
+func (s *Server) BotAcceptInvite(c *gin.Context) {
+	inviteIDStr := c.Param("id")
+	telegramIDStr := c.Query("telegramId")
+
+	inviteID, err := strconv.ParseInt(inviteIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite ID"})
+		return
+	}
+
+	telegramID, err := strconv.ParseInt(telegramIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid telegram ID"})
+		return
+	}
+
+	// Find user by telegram ID
+	var user models.User
+	if err := database.DB.Where("telegram_user_id = ?", telegramID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	// Find invite
+	var invite models.TeamInvite
+	if err := database.DB.First(&invite, inviteID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "invite not found"})
+		return
+	}
+
+	// Check it's for this user
+	if invite.InvitedUserID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not your invite"})
+		return
+	}
+
+	if invite.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invite already processed"})
+		return
+	}
+
+	// Get team
+	var team models.Team
+	if err := database.DB.First(&team, invite.TeamID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
+		return
+	}
+
+	// Add user to team
+	if err := database.DB.Model(&models.User{}).Where("id = ?", user.ID).Update("team_id", team.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to join team"})
+		return
+	}
+
+	// Update invite status
+	database.DB.Model(&invite).Update("status", "accepted")
+
+	// Update hackathon participant status if exists
+	database.DB.Model(&models.HackathonParticipant{}).
+		Where("user_id = ? AND hackathon_id = ?", user.ID, team.HackathonID).
+		Update("status", "in_team")
+
+	// Notify inviter
+	var inviter models.User
+	database.DB.First(&inviter, invite.InviterID)
+
+	go s.sendInviteResponseNotification(team, user, inviter, true)
+
+	c.JSON(http.StatusOK, gin.H{"message": "invite accepted", "teamId": team.ID})
+}
+
+// BotDeclineInvite - отклонить приглашение через бота (по telegramId)
+func (s *Server) BotDeclineInvite(c *gin.Context) {
+	inviteIDStr := c.Param("id")
+	telegramIDStr := c.Query("telegramId")
+
+	inviteID, err := strconv.ParseInt(inviteIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite ID"})
+		return
+	}
+
+	telegramID, err := strconv.ParseInt(telegramIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid telegram ID"})
+		return
+	}
+
+	// Find user by telegram ID
+	var user models.User
+	if err := database.DB.Where("telegram_user_id = ?", telegramID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	// Find invite
+	var invite models.TeamInvite
+	if err := database.DB.First(&invite, inviteID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "invite not found"})
+		return
+	}
+
+	// Check it's for this user
+	if invite.InvitedUserID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "not your invite"})
+		return
+	}
+
+	if invite.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invite already processed"})
+		return
+	}
+
+	// Update invite status
+	database.DB.Model(&invite).Update("status", "declined")
+
+	// Notify inviter
+	var team models.Team
+	var inviter models.User
+	database.DB.First(&team, invite.TeamID)
+	database.DB.First(&inviter, invite.InviterID)
+
+	go s.sendInviteResponseNotification(team, user, inviter, false)
+
+	c.JSON(http.StatusOK, gin.H{"message": "invite declined"})
 }
 
 // ============================================
@@ -375,13 +766,25 @@ func (s *Server) GetAllTeams(c *gin.Context) {
 		var members []models.User
 		database.DB.Where("team_id = ?", team.ID).Find(&members)
 
+		// Get captain
+		var captain models.User
+		database.DB.First(&captain, team.CaptainID)
+
 		response[i] = gin.H{
 			"id":          team.ID,
 			"name":        team.Name,
+			"description": team.Description,
 			"hackathonId": team.HackathonID,
 			"captainId":   team.CaptainID,
 			"status":      team.Status,
 			"members":     members,
+			"memberCount": len(members),
+			"captain":     captain,
+			"background":  team.Background,
+			"borderColor": team.BorderColor,
+			"nameColor":   team.NameColor,
+			"avatarUrl":   team.AvatarUrl,
+			"createdAt":   team.CreatedAt,
 		}
 	}
 

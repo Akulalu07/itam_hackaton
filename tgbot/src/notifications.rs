@@ -3,6 +3,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::env;
 use teloxide::prelude::*;
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 use crate::redis_client;
 
@@ -17,6 +18,38 @@ pub struct AuthorizedUser {
     pub telegram_user_id: i64,
     pub username: String,
     pub authorized: bool,
+}
+
+/// Notification types for the system
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationType {
+    JoinRequest,
+    TeamAccepted,
+    TeamRejected,
+    General,
+}
+
+/// Structured notification from backend
+#[derive(Debug, Deserialize)]
+pub struct Notification {
+    pub message: String,
+    #[serde(rename = "type")]
+    pub notification_type: Option<String>,
+    #[serde(rename = "targetUserId")]
+    pub target_user_id: Option<i64>,
+    #[serde(rename = "requestId")]
+    pub request_id: Option<i64>,
+    #[serde(rename = "inviteId")]
+    pub invite_id: Option<i64>,
+    #[serde(rename = "teamId")]
+    pub team_id: Option<i64>,
+    #[serde(rename = "teamName")]
+    pub team_name: Option<String>,
+    #[serde(rename = "userName")]
+    pub user_name: Option<String>,
+    #[serde(rename = "inviterName")]
+    pub inviter_name: Option<String>,
 }
 
 /// Consumes notifications from Redis stream and sends them to Telegram users
@@ -73,18 +106,58 @@ pub async fn consume_notifications_stream(bot: Bot) -> Result<()> {
 
                         if let Some(json_data) = data.get("data") {
                             log::debug!("Parsing notification data: {}", json_data);
-                            if let Ok(notification) =
-                                serde_json::from_str::<serde_json::Value>(json_data)
-                            {
-                                let message = notification
+                            
+                            // Try to parse as structured notification first
+                            if let Ok(notification) = serde_json::from_str::<Notification>(json_data) {
+                                log::info!("Received structured notification: {:?}", notification);
+                                
+                                match notification.notification_type.as_deref() {
+                                    Some("join_request") => {
+                                        // Send to specific user (team captain) with accept/reject buttons
+                                        if let Some(target_user_id) = notification.target_user_id {
+                                            if let Err(e) = send_join_request_notification(&bot, target_user_id, &notification).await {
+                                                log::error!("Error sending join request notification: {}", e);
+                                            }
+                                        } else {
+                                            log::warn!("No target user for join_request notification");
+                                        }
+                                    }
+                                    Some("team_invite") => {
+                                        // Send to user who is invited to join team with accept/reject buttons
+                                        if let Some(target_user_id) = notification.target_user_id {
+                                            if let Err(e) = send_team_invite_notification(&bot, target_user_id, &notification).await {
+                                                log::error!("Error sending team invite notification: {}", e);
+                                            }
+                                        } else {
+                                            log::warn!("No target user for team_invite notification");
+                                        }
+                                    }
+                                    Some("team_accepted") | Some("team_rejected") | Some("invite_accepted") | Some("invite_rejected") => {
+                                        // Send to the user who requested to join or sent invite
+                                        if let Some(target_user_id) = notification.target_user_id {
+                                            if let Err(e) = send_notification_to_user(&bot, target_user_id, &notification.message).await {
+                                                log::error!("Error sending response notification: {}", e);
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        // General notification - send to all users
+                                        log::info!("Sending general notification: {}", notification.message);
+                                        if let Err(e) = send_notification_to_all_users(&bot, &notification.message).await {
+                                            log::error!("Error sending notifications: {}", e);
+                                        }
+                                    }
+                                }
+                            } else if let Ok(simple_notification) = serde_json::from_str::<serde_json::Value>(json_data) {
+                                // Fallback to simple message format
+                                let message = simple_notification
                                     .get("message")
                                     .and_then(|m| m.as_str())
                                     .unwrap_or("Новое уведомление");
 
-                                log::info!("Sending notification: {}", message);
+                                log::info!("Sending simple notification: {}", message);
 
-                                if let Err(e) = send_notification_to_all_users(&bot, message).await
-                                {
+                                if let Err(e) = send_notification_to_all_users(&bot, message).await {
                                     log::error!("Error sending notifications: {}", e);
                                 }
                             } else {
@@ -204,6 +277,178 @@ async fn send_notification_to_all_users(bot: &Bot, message: &str) -> Result<()> 
         return Err(anyhow::anyhow!("Backend returned {}: {}", status, text));
     }
 
+    Ok(())
+}
+
+/// Check if user has notifications enabled
+async fn check_notifications_enabled(telegram_user_id: i64) -> bool {
+    let backend_url = env::var("BACKEND_URL").unwrap_or_else(|_| "http://backend:8080".to_string());
+    let url = format!("{}/api/bot/notifications/{}", backend_url, telegram_user_id);
+    
+    let client = reqwest::Client::new();
+    match client.get(&url).send().await {
+        Ok(response) if response.status().is_success() => {
+            if let Ok(data) = response.json::<serde_json::Value>().await {
+                data.get("notificationsEnabled").and_then(|v| v.as_bool()).unwrap_or(true)
+            } else {
+                true // Default to enabled if can't parse
+            }
+        }
+        _ => true // Default to enabled if can't reach backend
+    }
+}
+
+/// Sends a notification to a specific user by their Telegram ID
+async fn send_notification_to_user(bot: &Bot, telegram_user_id: i64, message: &str) -> Result<()> {
+    // Check if user has notifications enabled
+    if !check_notifications_enabled(telegram_user_id).await {
+        log::info!("Skipping notification for user {} - notifications disabled", telegram_user_id);
+        return Ok(());
+    }
+    
+    let chat_id = ChatId(telegram_user_id);
+    log::info!("Sending notification to user {} (chat_id: {:?})", telegram_user_id, chat_id);
+    
+    if let Err(e) = bot.send_message(chat_id, message).await {
+        log::error!("Failed to send notification to user {}: {}", telegram_user_id, e);
+        return Err(anyhow::anyhow!("Failed to send message: {}", e));
+    }
+    
+    log::info!("✓ Notification sent to user {}", telegram_user_id);
+    Ok(())
+}
+
+/// Sends a join request notification with accept/reject buttons
+async fn send_join_request_notification(bot: &Bot, captain_telegram_id: i64, notification: &Notification) -> Result<()> {
+    // Check if captain has notifications enabled
+    if !check_notifications_enabled(captain_telegram_id).await {
+        log::info!("Skipping join request notification for captain {} - notifications disabled", captain_telegram_id);
+        return Ok(());
+    }
+    
+    let chat_id = ChatId(captain_telegram_id);
+    
+    let request_id = notification.request_id.unwrap_or(0);
+    let team_id = notification.team_id.unwrap_or(0);
+    let user_name = notification.user_name.clone().unwrap_or_else(|| "Пользователь".to_string());
+    let team_name = notification.team_name.clone().unwrap_or_else(|| "команду".to_string());
+    
+    let message = format!(
+        "🔔 *Запрос на вступление в команду*\n\n\
+        Пользователь *{}* хочет вступить в команду *{}*.\n\n\
+        Нажмите кнопку ниже, чтобы принять или отклонить заявку.",
+        user_name, team_name
+    );
+    
+    // Create inline keyboard with accept/reject buttons
+    let keyboard = InlineKeyboardMarkup::new(vec![
+        vec![
+            InlineKeyboardButton::callback(
+                "✅ Принять", 
+                format!("join_accept:{}:{}", team_id, request_id)
+            ),
+            InlineKeyboardButton::callback(
+                "❌ Отклонить", 
+                format!("join_reject:{}:{}", team_id, request_id)
+            ),
+        ],
+    ]);
+    
+    log::info!("Sending join request notification to captain {} for request {}", captain_telegram_id, request_id);
+    
+    if let Err(e) = bot
+        .send_message(chat_id, &message)
+        .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+        .reply_markup(keyboard)
+        .await 
+    {
+        // Try without markdown if it fails
+        log::warn!("Failed to send with markdown, trying plain text: {}", e);
+        let plain_message = format!(
+            "🔔 Запрос на вступление в команду\n\n\
+            Пользователь {} хочет вступить в команду {}.\n\n\
+            Нажмите кнопку ниже, чтобы принять или отклонить заявку.",
+            user_name, team_name
+        );
+        
+        let keyboard = InlineKeyboardMarkup::new(vec![
+            vec![
+                InlineKeyboardButton::callback(
+                    "✅ Принять", 
+                    format!("join_accept:{}:{}", team_id, request_id)
+                ),
+                InlineKeyboardButton::callback(
+                    "❌ Отклонить", 
+                    format!("join_reject:{}:{}", team_id, request_id)
+                ),
+            ],
+        ]);
+        
+        if let Err(e2) = bot
+            .send_message(chat_id, &plain_message)
+            .reply_markup(keyboard)
+            .await 
+        {
+            log::error!("Failed to send join request notification to {}: {}", captain_telegram_id, e2);
+            return Err(anyhow::anyhow!("Failed to send message: {}", e2));
+        }
+    }
+    
+    log::info!("✓ Join request notification sent to captain {}", captain_telegram_id);
+    Ok(())
+}
+
+/// Sends a team invite notification with accept/reject buttons
+async fn send_team_invite_notification(bot: &Bot, user_telegram_id: i64, notification: &Notification) -> Result<()> {
+    // Check if user has notifications enabled
+    if !check_notifications_enabled(user_telegram_id).await {
+        log::info!("Skipping team invite notification for user {} - notifications disabled", user_telegram_id);
+        return Ok(());
+    }
+    
+    let chat_id = ChatId(user_telegram_id);
+    
+    // Get invite_id - try invite_id first, fallback to request_id
+    let invite_id = notification.invite_id.or(notification.request_id).unwrap_or(0);
+    let team_id = notification.team_id.unwrap_or(0);
+    let inviter_name = notification.inviter_name.clone()
+        .or_else(|| notification.user_name.clone())
+        .unwrap_or_else(|| "Капитан".to_string());
+    let team_name = notification.team_name.clone().unwrap_or_else(|| "команду".to_string());
+    
+    let message = format!(
+        "📨 Приглашение в команду\n\n\
+        {} приглашает вас в команду \"{}\".\n\n\
+        Нажмите кнопку ниже, чтобы принять или отклонить приглашение.",
+        inviter_name, team_name
+    );
+    
+    // Create inline keyboard with accept/reject buttons
+    let keyboard = InlineKeyboardMarkup::new(vec![
+        vec![
+            InlineKeyboardButton::callback(
+                "✅ Принять", 
+                format!("invite_accept:{}:{}", team_id, invite_id)
+            ),
+            InlineKeyboardButton::callback(
+                "❌ Отклонить", 
+                format!("invite_reject:{}:{}", team_id, invite_id)
+            ),
+        ],
+    ]);
+    
+    log::info!("Sending team invite notification to user {} for invite {}", user_telegram_id, invite_id);
+    
+    if let Err(e) = bot
+        .send_message(chat_id, &message)
+        .reply_markup(keyboard)
+        .await 
+    {
+        log::error!("Failed to send team invite notification to {}: {}", user_telegram_id, e);
+        return Err(anyhow::anyhow!("Failed to send message: {}", e));
+    }
+    
+    log::info!("✓ Team invite notification sent to user {}", user_telegram_id);
     Ok(())
 }
 

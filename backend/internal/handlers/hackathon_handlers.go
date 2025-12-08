@@ -51,18 +51,20 @@ func (s *Server) GetHackathonsReal(c *gin.Context) {
 	response := make([]gin.H, len(hackathons))
 	for i, h := range hackathons {
 		response[i] = gin.H{
-			"id":                h.ID,
-			"name":              h.Name,
-			"description":       h.Description,
-			"status":            h.Status,
-			"startDate":         h.StartDate,
-			"endDate":           h.EndDate,
-			"teamSize":          h.TeamSize,
-			"maxTeams":          h.MaxTeams,
-			"tags":              h.Tags,
-			"requiredStack":     h.RequiredStack,
-			"participantsCount": countMap[h.ID],
-			"createdAt":         h.CreatedAt,
+			"id":                   h.ID,
+			"name":                 h.Name,
+			"description":          h.Description,
+			"imageUrl":             h.ImageUrl,
+			"status":               h.Status,
+			"startDate":            h.StartDate,
+			"endDate":              h.EndDate,
+			"registrationDeadline": h.RegistrationDeadline,
+			"teamSize":             h.TeamSize,
+			"maxTeams":             h.MaxTeams,
+			"tags":                 h.Tags,
+			"requiredStack":        h.RequiredStack,
+			"participantsCount":    countMap[h.ID],
+			"createdAt":            h.CreatedAt,
 		}
 	}
 
@@ -113,34 +115,38 @@ func (s *Server) GetHackathonByID(c *gin.Context) {
 		Count(&teamsCount)
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":                hackathon.ID,
-		"name":              hackathon.Name,
-		"description":       hackathon.Description,
-		"status":            hackathon.Status,
-		"startDate":         hackathon.StartDate,
-		"endDate":           hackathon.EndDate,
-		"teamSize":          hackathon.TeamSize,
-		"maxTeams":          hackathon.MaxTeams,
-		"tags":              hackathon.Tags,
-		"requiredStack":     hackathon.RequiredStack,
-		"participantsCount": participantsCount,
-		"teamsCount":        teamsCount,
-		"createdAt":         hackathon.CreatedAt,
+		"id":                   hackathon.ID,
+		"name":                 hackathon.Name,
+		"description":          hackathon.Description,
+		"imageUrl":             hackathon.ImageUrl,
+		"status":               hackathon.Status,
+		"startDate":            hackathon.StartDate,
+		"endDate":              hackathon.EndDate,
+		"registrationDeadline": hackathon.RegistrationDeadline,
+		"teamSize":             hackathon.TeamSize,
+		"maxTeams":             hackathon.MaxTeams,
+		"tags":                 hackathon.Tags,
+		"requiredStack":        hackathon.RequiredStack,
+		"participantsCount":    participantsCount,
+		"teamsCount":           teamsCount,
+		"createdAt":            hackathon.CreatedAt,
 	})
 }
 
 // CreateHackathonReal - создать хакатон (admin)
 func (s *Server) CreateHackathonReal(c *gin.Context) {
 	var req struct {
-		Name          string   `json:"name" binding:"required"`
-		Description   string   `json:"description"`
-		StartDate     string   `json:"startDate"`
-		EndDate       string   `json:"endDate"`
-		TeamSize      int      `json:"teamSize"`
-		MaxTeams      int      `json:"maxTeams"`
-		Tags          []string `json:"tags"`
-		RequiredStack []string `json:"requiredStack"`
-		Status        string   `json:"status"`
+		Name                 string   `json:"name" binding:"required"`
+		Description          string   `json:"description"`
+		ImageUrl             string   `json:"imageUrl"`
+		StartDate            string   `json:"startDate"`
+		EndDate              string   `json:"endDate"`
+		RegistrationDeadline string   `json:"registrationDeadline"`
+		TeamSize             int      `json:"teamSize"`
+		MaxTeams             int      `json:"maxTeams"`
+		Tags                 []string `json:"tags"`
+		RequiredStack        []string `json:"requiredStack"`
+		Status               string   `json:"status"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -170,15 +176,33 @@ func (s *Server) CreateHackathonReal(c *gin.Context) {
 	if req.Description != "" {
 		hackathon.Description = &req.Description
 	}
+	if req.ImageUrl != "" {
+		hackathon.ImageUrl = &req.ImageUrl
+	}
 
-	if req.StartDate != "" {
-		t, _ := time.Parse(time.RFC3339, req.StartDate)
-		hackathon.StartDate = &t
+	// Helper function to parse date in multiple formats
+	parseDate := func(dateStr string) *time.Time {
+		if dateStr == "" {
+			return nil
+		}
+		// Try RFC3339 first (2025-12-15T10:00:00Z)
+		if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+			return &t
+		}
+		// Try date only format (2025-12-15)
+		if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+			return &t
+		}
+		// Try datetime without timezone (2025-12-15T10:00:00)
+		if t, err := time.Parse("2006-01-02T15:04:05", dateStr); err == nil {
+			return &t
+		}
+		return nil
 	}
-	if req.EndDate != "" {
-		t, _ := time.Parse(time.RFC3339, req.EndDate)
-		hackathon.EndDate = &t
-	}
+
+	hackathon.StartDate = parseDate(req.StartDate)
+	hackathon.EndDate = parseDate(req.EndDate)
+	hackathon.RegistrationDeadline = parseDate(req.RegistrationDeadline)
 
 	if err := database.DB.Create(&hackathon).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create hackathon"})
@@ -203,20 +227,41 @@ func (s *Server) UpdateHackathonReal(c *gin.Context) {
 	}
 
 	var req struct {
-		Name          string   `json:"name"`
-		Description   string   `json:"description"`
-		StartDate     string   `json:"startDate"`
-		EndDate       string   `json:"endDate"`
-		TeamSize      int      `json:"teamSize"`
-		MaxTeams      int      `json:"maxTeams"`
-		Tags          []string `json:"tags"`
-		RequiredStack []string `json:"requiredStack"`
-		Status        string   `json:"status"`
+		Name                 string   `json:"name"`
+		Description          string   `json:"description"`
+		ImageUrl             string   `json:"imageUrl"`
+		StartDate            string   `json:"startDate"`
+		EndDate              string   `json:"endDate"`
+		RegistrationDeadline string   `json:"registrationDeadline"`
+		TeamSize             int      `json:"teamSize"`
+		MinTeamSize          int      `json:"minTeamSize"`
+		MaxTeamSize          int      `json:"maxTeamSize"`
+		MaxTeams             int      `json:"maxTeams"`
+		Tags                 []string `json:"tags"`
+		RequiredStack        []string `json:"requiredStack"`
+		Status               string   `json:"status"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Helper function to parse date in multiple formats
+	parseDate := func(dateStr string) *time.Time {
+		if dateStr == "" {
+			return nil
+		}
+		if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+			return &t
+		}
+		if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+			return &t
+		}
+		if t, err := time.Parse("2006-01-02T15:04:05", dateStr); err == nil {
+			return &t
+		}
+		return nil
 	}
 
 	updates := map[string]interface{}{}
@@ -230,6 +275,9 @@ func (s *Server) UpdateHackathonReal(c *gin.Context) {
 	if req.TeamSize > 0 {
 		updates["team_size"] = req.TeamSize
 	}
+	if req.MaxTeamSize > 0 {
+		updates["team_size"] = req.MaxTeamSize
+	}
 	if req.MaxTeams >= 0 {
 		updates["max_teams"] = req.MaxTeams
 	}
@@ -242,13 +290,17 @@ func (s *Server) UpdateHackathonReal(c *gin.Context) {
 	if req.RequiredStack != nil {
 		updates["required_stack"] = req.RequiredStack
 	}
-	if req.StartDate != "" {
-		t, _ := time.Parse(time.RFC3339, req.StartDate)
-		updates["start_date"] = t
+	if req.ImageUrl != "" {
+		updates["image_url"] = req.ImageUrl
 	}
-	if req.EndDate != "" {
-		t, _ := time.Parse(time.RFC3339, req.EndDate)
-		updates["end_date"] = t
+	if t := parseDate(req.StartDate); t != nil {
+		updates["start_date"] = *t
+	}
+	if t := parseDate(req.EndDate); t != nil {
+		updates["end_date"] = *t
+	}
+	if t := parseDate(req.RegistrationDeadline); t != nil {
+		updates["registration_deadline"] = *t
 	}
 
 	if err := database.DB.Model(&hackathon).Updates(updates).Error; err != nil {

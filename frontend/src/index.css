@@ -114,6 +114,27 @@
   100% { transform: scale(1); opacity: 0; }
 }
 
+/* Swipe indicator styles */
+.swipe-like-indicator,
+.swipe-nope-indicator {
+  opacity: 0;
+  transform-origin: center;
+}
+
+/* TinderCard swipe animations - показывать индикаторы при свайпе */
+.swipe-card-top [style*="transform"] {
+  will-change: transform;
+}
+
+/* Card shadows on drag */
+.swipe-card {
+  transition: box-shadow 0.2s ease;
+}
+
+.swipe-card:active {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
 /* Profile Customization Animations */
 @keyframes fireGlow {
   from { box-shadow: 0 0 0 3px #ef4444, 0 0 15px rgba(239, 68, 68, 0.5); }

@@ -307,6 +307,21 @@ export const hackathonService = {
 export interface SwipeResponse {
   match: boolean;  // Если оба свайпнули right
   invite?: Invite; // Если создан invite
+  matchedUser?: {  // Информация о пользователе при match
+    id: number;
+    name: string;
+    username?: string;
+    avatar?: string;
+  };
+}
+
+export interface SwipePreferences {
+  minMmr?: number;
+  maxMmr?: number;
+  preferredSkills: string[];
+  preferredExperience: string[];
+  preferredRoles: string[];
+  verifiedOnly: boolean;
 }
 
 export const swipeService = {
@@ -337,6 +352,78 @@ export const swipeService = {
   undoSwipe: async (): Promise<void> => {
     await axiosClient.post('/api/swipe/undo');
   },
+
+  /**
+   * Получить настройки фильтров свайпа
+   */
+  getPreferences: async (): Promise<SwipePreferences> => {
+    const response = await axiosClient.get<SwipePreferences>('/api/swipe/preferences');
+    return response.data;
+  },
+
+  /**
+   * Обновить настройки фильтров свайпа
+   */
+  updatePreferences: async (prefs: Partial<SwipePreferences>): Promise<SwipePreferences> => {
+    const response = await axiosClient.put<SwipePreferences>('/api/swipe/preferences', prefs);
+    return response.data;
+  },
+
+  /**
+   * Получить список мэтчей
+   */
+  getMatches: async (): Promise<any[]> => {
+    const response = await axiosClient.get('/api/matches');
+    return response.data;
+  },
+};
+
+// ============================================
+// NOTIFICATION SERVICE - Уведомления
+// ============================================
+
+export interface Notification {
+  id: number;
+  type: 'match' | 'team_invite' | 'team_request' | 'hackathon_start' | 'hackathon_reminder' | 'team_accepted' | 'team_rejected';
+  title: string;
+  message?: string;
+  data?: any;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export const notificationService = {
+  /**
+   * Получить уведомления
+   */
+  getAll: async (unreadOnly: boolean = false, limit: number = 50): Promise<{ notifications: Notification[]; unreadCount: number }> => {
+    const params: any = { limit };
+    if (unreadOnly) params.unread = 'true';
+    const response = await axiosClient.get('/api/notifications', { params });
+    return response.data;
+  },
+
+  /**
+   * Получить количество непрочитанных
+   */
+  getUnreadCount: async (): Promise<number> => {
+    const response = await axiosClient.get<{ count: number }>('/api/notifications/unread-count');
+    return response.data.count;
+  },
+
+  /**
+   * Отметить уведомление прочитанным
+   */
+  markRead: async (notificationId: number): Promise<void> => {
+    await axiosClient.post(`/api/notifications/${notificationId}/read`);
+  },
+
+  /**
+   * Отметить все уведомления прочитанными
+   */
+  markAllRead: async (): Promise<void> => {
+    await axiosClient.post('/api/notifications/read-all');
+  },
 };
 
 // ============================================
@@ -348,6 +435,63 @@ export interface CreateTeamData {
   hackathonId: string;
   description?: string;
   lookingFor?: string[];
+}
+
+export interface TeamCustomization {
+  name?: string;
+  description?: string;
+  background?: string;
+  borderColor?: string;
+  nameColor?: string;
+  avatarUrl?: string;
+}
+
+export interface JoinRequest {
+  id: number;
+  userId: number;
+  status: string;
+  user: User;
+  createdAt: string;
+}
+
+export interface MyJoinRequest {
+  id: number;
+  teamId: number;
+  teamName: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface TeamBalance {
+  score: number;
+  skillCoverage: Record<string, number>;
+  mmrStats: {
+    average: number;
+    min: number;
+    max: number;
+    spread: number;
+  };
+  roles: Record<string, number>;
+  warnings: string[];
+  suggestions: Array<{
+    type: string;
+    message: string;
+  }>;
+}
+
+export interface CandidateCompatibility {
+  candidate: {
+    id: number;
+    name: string;
+    skills: string[];
+    mmr: number;
+  };
+  currentBalance: number;
+  newBalance: number;
+  scoreDiff: number;
+  recommendation: 'recommended' | 'neutral' | 'not_recommended';
+  newSkillsCovered: number;
+  newRolesCovered: number;
 }
 
 export const teamService = {
@@ -371,6 +515,24 @@ export const teamService = {
       // Если команды нет - вернём null
       return null;
     }
+  },
+
+  /**
+   * Получить баланс команды
+   */
+  getBalance: async (): Promise<TeamBalance> => {
+    const response = await axiosClient.get<TeamBalance>('/api/teams/balance');
+    return response.data;
+  },
+
+  /**
+   * Получить совместимость кандидата с командой
+   */
+  getCompatibility: async (candidateId: string): Promise<CandidateCompatibility> => {
+    const response = await axiosClient.get<CandidateCompatibility>('/api/teams/compatibility', {
+      params: { candidateId },
+    });
+    return response.data;
   },
 
   /**
@@ -421,7 +583,7 @@ export const teamService = {
   /**
    * Изменить статус команды
    */
-  updateStatus: async (teamId: string, status: 'open' | 'closed'): Promise<Team> => {
+  updateStatus: async (teamId: string, status: 'looking' | 'closed'): Promise<Team> => {
     const response = await axiosClient.put<Team>(`/api/teams/${teamId}/status`, { status });
     return response.data;
   },
@@ -439,6 +601,60 @@ export const teamService = {
    */
   joinByCode: async (code: string): Promise<Team> => {
     const response = await axiosClient.post<Team>('/api/teams/join', { code });
+    return response.data;
+  },
+
+  /**
+   * Получить публичный список команд хакатона
+   */
+  getPublicTeams: async (hackathonId: string): Promise<Team[]> => {
+    const response = await axiosClient.get<Team[]>('/api/teams/public', { params: { hackathonId } });
+    return response.data;
+  },
+
+  /**
+   * Отправить запрос на вступление в команду
+   */
+  requestJoin: async (teamId: string, message?: string): Promise<{ requestId: number }> => {
+    const response = await axiosClient.post<{ requestId: number }>(`/api/teams/${teamId}/request-join`, { message });
+    return response.data;
+  },
+
+  /**
+   * Получить запросы на вступление в мою команду (для капитана)
+   */
+  getJoinRequests: async (teamId: string): Promise<JoinRequest[]> => {
+    const response = await axiosClient.get<JoinRequest[]>(`/api/teams/${teamId}/join-requests`);
+    return response.data;
+  },
+
+  /**
+   * Принять/отклонить запрос на вступление
+   */
+  handleJoinRequest: async (requestId: number, action: 'accept' | 'reject'): Promise<void> => {
+    await axiosClient.post(`/api/join-requests/${requestId}/handle`, { action });
+  },
+
+  /**
+   * Получить мои запросы на вступление
+   */
+  getMyJoinRequests: async (): Promise<MyJoinRequest[]> => {
+    const response = await axiosClient.get<MyJoinRequest[]>('/api/my-join-requests');
+    return response.data;
+  },
+
+  /**
+   * Отменить свой запрос на вступление
+   */
+  cancelJoinRequest: async (requestId: number): Promise<void> => {
+    await axiosClient.delete(`/api/join-requests/${requestId}`);
+  },
+
+  /**
+   * Обновить кастомизацию команды
+   */
+  updateCustomization: async (teamId: string, data: TeamCustomization): Promise<Team> => {
+    const response = await axiosClient.put<Team>(`/api/teams/${teamId}`, data);
     return response.data;
   },
 };

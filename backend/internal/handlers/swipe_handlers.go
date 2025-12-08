@@ -4,6 +4,7 @@ import (
 	"backend/internal/database"
 	"backend/internal/middleware"
 	"backend/internal/models"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -14,7 +15,126 @@ import (
 // SWIPE & MATCHING HANDLERS
 // ============================================
 
-// GetRecommendationsReal - получить кандидатов для свайпа
+// GetSwipePreferences - получить настройки свайпа для текущего хакатона
+func (s *Server) GetSwipePreferences(c *gin.Context) {
+	userID, _ := middleware.GetUserID(c)
+
+	var user models.User
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
+		return
+	}
+
+	if user.CurrentHackathonID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you must be registered for a hackathon first"})
+		return
+	}
+
+	var pref models.SwipePreference
+	err := database.DB.Where("user_id = ? AND hackathon_id = ?", userID, *user.CurrentHackathonID).First(&pref).Error
+
+	if err != nil {
+		// Возвращаем дефолтные настройки
+		c.JSON(http.StatusOK, gin.H{
+			"minMmr":              nil,
+			"maxMmr":              nil,
+			"preferredSkills":     []string{},
+			"preferredExperience": []string{},
+			"preferredRoles":      []string{},
+			"verifiedOnly":        false,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"minMmr":              pref.MinMMR,
+		"maxMmr":              pref.MaxMMR,
+		"preferredSkills":     pref.PreferredSkills,
+		"preferredExperience": pref.PreferredExperience,
+		"preferredRoles":      pref.PreferredRoles,
+		"verifiedOnly":        pref.VerifiedOnly,
+	})
+}
+
+// UpdateSwipePreferences - обновить настройки свайпа
+func (s *Server) UpdateSwipePreferences(c *gin.Context) {
+	userID, _ := middleware.GetUserID(c)
+
+	var req struct {
+		MinMMR              *int     `json:"minMmr"`
+		MaxMMR              *int     `json:"maxMmr"`
+		PreferredSkills     []string `json:"preferredSkills"`
+		PreferredExperience []string `json:"preferredExperience"`
+		PreferredRoles      []string `json:"preferredRoles"`
+		VerifiedOnly        bool     `json:"verifiedOnly"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var user models.User
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
+		return
+	}
+
+	if user.CurrentHackathonID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you must be registered for a hackathon first"})
+		return
+	}
+
+	hackathonID := *user.CurrentHackathonID
+
+	// Upsert preferences
+	var pref models.SwipePreference
+	err := database.DB.Where("user_id = ? AND hackathon_id = ?", userID, hackathonID).First(&pref).Error
+
+	if err != nil {
+		// Создаём новую запись
+		pref = models.SwipePreference{
+			UserID:              userID,
+			HackathonID:         hackathonID,
+			MinMMR:              req.MinMMR,
+			MaxMMR:              req.MaxMMR,
+			PreferredSkills:     req.PreferredSkills,
+			PreferredExperience: req.PreferredExperience,
+			PreferredRoles:      req.PreferredRoles,
+			VerifiedOnly:        req.VerifiedOnly,
+		}
+		if err := database.DB.Create(&pref).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create preferences"})
+			return
+		}
+	} else {
+		// Обновляем существующую
+		updates := map[string]interface{}{
+			"min_mmr":              req.MinMMR,
+			"max_mmr":              req.MaxMMR,
+			"preferred_skills":     req.PreferredSkills,
+			"preferred_experience": req.PreferredExperience,
+			"preferred_roles":      req.PreferredRoles,
+			"verified_only":        req.VerifiedOnly,
+		}
+		if err := database.DB.Model(&pref).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update preferences"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":             true,
+		"minMmr":              req.MinMMR,
+		"maxMmr":              req.MaxMMR,
+		"preferredSkills":     req.PreferredSkills,
+		"preferredExperience": req.PreferredExperience,
+		"preferredRoles":      req.PreferredRoles,
+		"verifiedOnly":        req.VerifiedOnly,
+	})
+}
+
+// GetRecommendationsReal - получить кандидатов для свайпа с фильтрацией
 func (s *Server) GetRecommendationsReal(c *gin.Context) {
 	userID, _ := middleware.GetUserID(c)
 
@@ -32,23 +152,57 @@ func (s *Server) GetRecommendationsReal(c *gin.Context) {
 
 	hackathonID := *user.CurrentHackathonID
 
+	// Load user's swipe preferences
+	var prefs models.SwipePreference
+	hasPrefs := database.DB.Where("user_id = ? AND hackathon_id = ?", userID, hackathonID).First(&prefs).Error == nil
+
 	// Get participants of the same hackathon who are looking for team
 	// Exclude: current user, users already swiped, users in same team
-	var candidates []models.User
-
 	subQuery := database.DB.
 		Table("swipes").
 		Select("target_user_id").
 		Where("swiper_team_id = ? OR swiper_team_id IN (SELECT id FROM teams WHERE captain_id = ?)", userID, userID)
 
-	err := database.DB.
+	query := database.DB.
 		Joins("JOIN hackathon_participants hp ON hp.user_id = users.id").
 		Where("hp.hackathon_id = ?", hackathonID).
 		Where("users.id != ?", userID).
 		Where("hp.status = ?", "looking").
-		Where("users.id NOT IN (?)", subQuery).
-		Limit(20).
-		Find(&candidates).Error
+		Where("users.id NOT IN (?)", subQuery)
+
+	// Apply preference filters
+	if hasPrefs {
+		// MMR фильтры
+		if prefs.MinMMR != nil {
+			query = query.Where("users.mmr >= ?", *prefs.MinMMR)
+		}
+		if prefs.MaxMMR != nil {
+			query = query.Where("users.mmr <= ?", *prefs.MaxMMR)
+		}
+
+		// Фильтр по опыту
+		if len(prefs.PreferredExperience) > 0 {
+			query = query.Where("users.experience IN ?", []string(prefs.PreferredExperience))
+		}
+
+		// Фильтр по подтверждённым навыкам
+		if prefs.VerifiedOnly {
+			query = query.Where("array_length(users.verified_skills, 1) > 0")
+		}
+
+		// Фильтр по навыкам (любой из предпочтительных)
+		if len(prefs.PreferredSkills) > 0 {
+			query = query.Where("users.skills && ?", prefs.PreferredSkills)
+		}
+
+		// Фильтр по ролям (looking_for)
+		if len(prefs.PreferredRoles) > 0 {
+			query = query.Where("users.looking_for && ?", prefs.PreferredRoles)
+		}
+	}
+
+	var candidates []models.User
+	err := query.Limit(20).Find(&candidates).Error
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch recommendations"})
@@ -223,6 +377,10 @@ func (s *Server) SwipeReal(c *gin.Context) {
 		return
 	}
 
+	// Get current user info for notification
+	var currentUser models.User
+	database.DB.First(&currentUser, userID)
+
 	// Create swipe
 	swipe := models.Swipe{
 		SwiperTeamID: swiperTeamID,
@@ -237,6 +395,7 @@ func (s *Server) SwipeReal(c *gin.Context) {
 
 	// If "like", check for mutual match
 	isMatch := false
+	var matchedUserInfo *models.User
 	if req.Action == "like" {
 		// Check if target user also liked current user/team
 		var reverseSwipe models.Swipe
@@ -255,15 +414,70 @@ func (s *Server) SwipeReal(c *gin.Context) {
 			}
 			database.DB.Create(&match)
 
-			// TODO: Send notification to both users via TG bot
+			// Get matched user info
+			var targetUser models.User
+			database.DB.First(&targetUser, req.TargetUserID)
+			matchedUserInfo = &targetUser
+
+			// Create notifications for both users
+			notifData := map[string]interface{}{
+				"matchId":      match.ID,
+				"fromUserId":   userID,
+				"fromUserName": currentUser.Name,
+			}
+			notifDataJSON, _ := json.Marshal(notifData)
+
+			// Notify target user
+			notif1 := models.Notification{
+				UserID:  req.TargetUserID,
+				Type:    models.NotificationTypeMatch,
+				Title:   "Новый мэтч! 🎉",
+				Message: currentUser.Name + " тоже хочет с тобой в команду!",
+				Data:    notifDataJSON,
+			}
+			database.DB.Create(&notif1)
+
+			// Notify current user
+			notifData2 := map[string]interface{}{
+				"matchId":      match.ID,
+				"fromUserId":   req.TargetUserID,
+				"fromUserName": targetUser.Name,
+			}
+			notifData2JSON, _ := json.Marshal(notifData2)
+
+			notif2 := models.Notification{
+				UserID:  userID,
+				Type:    models.NotificationTypeMatch,
+				Title:   "Новый мэтч! 🎉",
+				Message: targetUser.Name + " тоже хочет с тобой в команду!",
+				Data:    notifData2JSON,
+			}
+			database.DB.Create(&notif2)
+
+			// Send via Redis (for TG bot)
+			if s.NotificationService != nil {
+				s.NotificationService.SendMatchNotification(req.TargetUserID, currentUser.Name)
+				s.NotificationService.SendMatchNotification(userID, targetUser.Name)
+			}
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"success": true,
 		"action":  req.Action,
 		"match":   isMatch,
-	})
+	}
+
+	if matchedUserInfo != nil {
+		response["matchedUser"] = gin.H{
+			"id":       matchedUserInfo.ID,
+			"name":     matchedUserInfo.Name,
+			"username": matchedUserInfo.Username,
+			"avatar":   matchedUserInfo.AvatarURL,
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // GetMatches - получить список мэтчей

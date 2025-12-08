@@ -15,11 +15,13 @@ type Hackathon struct {
 	ID          int64           `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name        string          `gorm:"not null" json:"name"`
 	Description *string         `json:"description,omitempty"`
+	ImageUrl    *string         `json:"imageUrl,omitempty"`
 	CreatorID   int64           `gorm:"index" json:"creatorId"`
 	Status      HackathonStatus `gorm:"type:varchar(30);default:'draft'" json:"status"`
 
-	StartDate *time.Time `json:"startDate,omitempty"`
-	EndDate   *time.Time `json:"endDate,omitempty"`
+	StartDate            *time.Time `json:"startDate,omitempty"`
+	EndDate              *time.Time `json:"endDate,omitempty"`
+	RegistrationDeadline *time.Time `json:"registrationDeadline,omitempty"`
 
 	AgeLimit      *int     `json:"ageLimit,omitempty"`
 	Tags          []string `gorm:"type:text[];serializer:json" json:"tags"`

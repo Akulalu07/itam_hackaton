@@ -1,7 +1,7 @@
 import { PlaceholderPage } from '../../components/common/PlaceholderPage';
 import { SwipeDeck } from '../../features/swipe';
 import { InvitesList } from '../../features/invites';
-import { TeamHub } from '../../features/team';
+import { TeamHub, CreateTeam } from '../../features/team';
 import { UserProfile } from '../../features/profile';
 import { ProfilePage as ProfileEditPageComponent } from './ProfilePage';
 
@@ -24,13 +24,7 @@ export function ProfileEditPage() {
 }
 
 export function CreateTeamPage() {
-  return (
-    <PlaceholderPage 
-      title="Создание команды"
-      description="Придумайте название и начните набор"
-      icon="🚀"
-    />
-  );
+  return <CreateTeam />;
 }
 
 export function SwipePage() {

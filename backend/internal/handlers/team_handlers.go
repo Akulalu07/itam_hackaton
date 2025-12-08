@@ -6,6 +6,7 @@ import (
 	"backend/internal/models"
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -60,6 +61,11 @@ func (s *Server) GetTeamsReal(c *gin.Context) {
 			"inviteCode":  team.InviteCode,
 			"captain":     captain,
 			"members":     members,
+			"memberCount": len(members),
+			"background":  team.Background,
+			"borderColor": team.BorderColor,
+			"nameColor":   team.NameColor,
+			"avatarUrl":   team.AvatarUrl,
 			"createdAt":   team.CreatedAt,
 		}
 	}
@@ -77,26 +83,32 @@ func (s *Server) GetMyTeamReal(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[GetMyTeamReal] userID=%d, teamID=%v", userID, user.TeamID)
+
 	var team models.Team
 	var found bool
 
 	if user.TeamID != nil {
 		if err := database.DB.First(&team, *user.TeamID).Error; err == nil {
 			found = true
+			log.Printf("[GetMyTeamReal] Found team by user.TeamID: %d", team.ID)
 		}
 	}
 
 	if !found {
 		// Check if user is a captain
 		if err := database.DB.Where("captain_id = ?", userID).First(&team).Error; err != nil {
+			log.Printf("[GetMyTeamReal] No team found for user %d", userID)
 			c.JSON(http.StatusOK, nil)
 			return
 		}
+		log.Printf("[GetMyTeamReal] Found team as captain: %d", team.ID)
 	}
 
 	// Get members
 	var members []models.User
 	database.DB.Where("team_id = ?", team.ID).Find(&members)
+	log.Printf("[GetMyTeamReal] Members count: %d", len(members))
 
 	// Get captain
 	var captain models.User
@@ -112,6 +124,11 @@ func (s *Server) GetMyTeamReal(c *gin.Context) {
 		"inviteCode":  team.InviteCode,
 		"captain":     captain,
 		"members":     members,
+		"memberCount": len(members),
+		"background":  team.Background,
+		"borderColor": team.BorderColor,
+		"nameColor":   team.NameColor,
+		"avatarUrl":   team.AvatarUrl,
 		"createdAt":   team.CreatedAt,
 	})
 }
@@ -193,8 +210,12 @@ func (s *Server) UpdateTeamReal(c *gin.Context) {
 	}
 
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		Background  *string `json:"background"`
+		BorderColor *string `json:"borderColor"`
+		NameColor   *string `json:"nameColor"`
+		AvatarUrl   *string `json:"avatarUrl"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -209,11 +230,41 @@ func (s *Server) UpdateTeamReal(c *gin.Context) {
 	if req.Description != "" {
 		updates["description"] = req.Description
 	}
+	if req.Background != nil {
+		updates["background"] = *req.Background
+	}
+	if req.BorderColor != nil {
+		updates["border_color"] = *req.BorderColor
+	}
+	if req.NameColor != nil {
+		updates["name_color"] = *req.NameColor
+	}
+	if req.AvatarUrl != nil {
+		updates["avatar_url"] = *req.AvatarUrl
+	}
 
 	database.DB.Model(&team).Updates(updates)
-	database.DB.Preload("Members").First(&team, teamID)
+	database.DB.First(&team, teamID)
 
-	c.JSON(http.StatusOK, team)
+	// Get members
+	var members []models.User
+	database.DB.Where("team_id = ?", team.ID).Find(&members)
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":          team.ID,
+		"name":        team.Name,
+		"description": team.Description,
+		"hackathonId": team.HackathonID,
+		"captainId":   team.CaptainID,
+		"status":      team.Status,
+		"inviteCode":  team.InviteCode,
+		"background":  team.Background,
+		"borderColor": team.BorderColor,
+		"nameColor":   team.NameColor,
+		"avatarUrl":   team.AvatarUrl,
+		"members":     members,
+		"createdAt":   team.CreatedAt,
+	})
 }
 
 // LeaveTeamReal - покинуть команду
@@ -344,7 +395,10 @@ func (s *Server) UpdateTeamStatusReal(c *gin.Context) {
 
 	database.DB.Model(&team).Update("status", req.Status)
 
-	c.JSON(http.StatusOK, gin.H{"status": req.Status})
+	// Перезагрузить команду с обновлённым статусом
+	database.DB.First(&team, teamID)
+
+	c.JSON(http.StatusOK, team)
 }
 
 // GenerateInviteLinkReal - сгенерировать ссылку-приглашение
@@ -437,4 +491,328 @@ func generateInviteCode() string {
 	bytes := make([]byte, 4)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
+}
+
+// ============================================
+// TEAM JOIN REQUESTS
+// ============================================
+
+// GetPublicTeams - получить список всех команд хакатона (публичный список для просмотра)
+func (s *Server) GetPublicTeams(c *gin.Context) {
+	hackathonID := c.Query("hackathonId")
+	if hackathonID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "hackathonId required"})
+		return
+	}
+
+	hid, _ := strconv.ParseInt(hackathonID, 10, 64)
+
+	var teams []models.Team
+	if err := database.DB.Where("hackathon_id = ?", hid).Find(&teams).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch teams"})
+		return
+	}
+
+	// Get hackathon for max team size
+	var hackathon models.Hackathon
+	database.DB.First(&hackathon, hid)
+
+	response := make([]gin.H, 0, len(teams))
+	for _, team := range teams {
+		// Get members
+		var members []models.User
+		database.DB.Where("team_id = ?", team.ID).Find(&members)
+
+		// Get captain
+		var captain models.User
+		database.DB.First(&captain, team.CaptainID)
+
+		response = append(response, gin.H{
+			"id":          team.ID,
+			"name":        team.Name,
+			"description": team.Description,
+			"hackathonId": team.HackathonID,
+			"captainId":   team.CaptainID,
+			"status":      team.Status,
+			"background":  team.Background,
+			"borderColor": team.BorderColor,
+			"nameColor":   team.NameColor,
+			"avatarUrl":   team.AvatarUrl,
+			"captain":     captain,
+			"members":     members,
+			"memberCount": len(members),
+			"maxMembers":  hackathon.TeamSize,
+			"createdAt":   team.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// RequestJoinTeam - отправить запрос на вступление в команду
+func (s *Server) RequestJoinTeam(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid team ID"})
+		return
+	}
+
+	userID, _ := middleware.GetUserID(c)
+
+	var req struct {
+		Message string `json:"message"`
+	}
+	c.ShouldBindJSON(&req)
+
+	// Check if team exists and is open
+	var team models.Team
+	if err := database.DB.First(&team, teamID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
+		return
+	}
+
+	if team.Status == models.TeamStatusClosed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is not accepting new members"})
+		return
+	}
+
+	// Check team size
+	var memberCount int64
+	database.DB.Model(&models.User{}).Where("team_id = ?", team.ID).Count(&memberCount)
+
+	var hackathon models.Hackathon
+	database.DB.First(&hackathon, team.HackathonID)
+
+	if int(memberCount) >= hackathon.TeamSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is full"})
+		return
+	}
+
+	// Check if already has pending request
+	var existingRequest models.TeamJoinRequest
+	if err := database.DB.Where("team_id = ? AND user_id = ? AND status = 'pending'", teamID, userID).First(&existingRequest).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you already have a pending request"})
+		return
+	}
+
+	// Check if user already in a team for this hackathon
+	var user models.User
+	database.DB.First(&user, userID)
+	if user.TeamID != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you are already in a team"})
+		return
+	}
+
+	// Create join request
+	joinRequest := models.TeamJoinRequest{
+		TeamID: teamID,
+		UserID: userID,
+		Status: "pending",
+	}
+
+	if err := database.DB.Create(&joinRequest).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create request"})
+		return
+	}
+
+	// Send notification to captain
+	var captain models.User
+	database.DB.First(&captain, team.CaptainID)
+
+	s.sendJoinRequestNotification(team, user, captain, joinRequest.ID)
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":   "request sent",
+		"requestId": joinRequest.ID,
+	})
+}
+
+// GetTeamJoinRequests - получить список запросов на вступление в команду (для капитана)
+func (s *Server) GetTeamJoinRequests(c *gin.Context) {
+	teamID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid team ID"})
+		return
+	}
+
+	userID, _ := middleware.GetUserID(c)
+
+	// Check if user is captain
+	var team models.Team
+	if err := database.DB.First(&team, teamID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
+		return
+	}
+
+	if team.CaptainID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only captain can view requests"})
+		return
+	}
+
+	// Get pending requests
+	var requests []models.TeamJoinRequest
+	database.DB.Where("team_id = ? AND status = 'pending'", teamID).Find(&requests)
+
+	response := make([]gin.H, 0, len(requests))
+	for _, req := range requests {
+		var user models.User
+		database.DB.First(&user, req.UserID)
+
+		response = append(response, gin.H{
+			"id":        req.ID,
+			"userId":    req.UserID,
+			"status":    req.Status,
+			"user":      user,
+			"createdAt": req.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// HandleJoinRequest - принять/отклонить запрос на вступление
+func (s *Server) HandleJoinRequest(c *gin.Context) {
+	requestID, err := strconv.ParseInt(c.Param("requestId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	var req struct {
+		Action string `json:"action" binding:"required"` // accept or reject
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Action != "accept" && req.Action != "reject" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "action must be 'accept' or 'reject'"})
+		return
+	}
+
+	userID, _ := middleware.GetUserID(c)
+
+	// Get request
+	var joinRequest models.TeamJoinRequest
+	if err := database.DB.First(&joinRequest, requestID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "request not found"})
+		return
+	}
+
+	// Get team
+	var team models.Team
+	database.DB.First(&team, joinRequest.TeamID)
+
+	// Only captain can handle requests
+	if team.CaptainID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only captain can handle requests"})
+		return
+	}
+
+	// Get requesting user
+	var requestingUser models.User
+	database.DB.First(&requestingUser, joinRequest.UserID)
+
+	if req.Action == "accept" {
+		// Check team size
+		var memberCount int64
+		database.DB.Model(&models.User{}).Where("team_id = ?", team.ID).Count(&memberCount)
+
+		var hackathon models.Hackathon
+		database.DB.First(&hackathon, team.HackathonID)
+
+		if int(memberCount) >= hackathon.TeamSize {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "team is full"})
+			return
+		}
+
+		// Add user to team
+		database.DB.Model(&models.User{}).Where("id = ?", joinRequest.UserID).Update("team_id", team.ID)
+
+		// Update hackathon participant status
+		database.DB.Model(&models.HackathonParticipant{}).
+			Where("user_id = ? AND hackathon_id = ?", joinRequest.UserID, team.HackathonID).
+			Update("status", "in_team")
+
+		joinRequest.Status = "accepted"
+
+		// Send acceptance notification
+		s.sendRequestResponseNotification(team, requestingUser, true)
+	} else {
+		joinRequest.Status = "rejected"
+
+		// Send rejection notification
+		s.sendRequestResponseNotification(team, requestingUser, false)
+	}
+
+	database.DB.Save(&joinRequest)
+
+	// Reject other pending requests from this user for this hackathon
+	if req.Action == "accept" {
+		var otherTeams []models.Team
+		database.DB.Where("hackathon_id = ?", team.HackathonID).Find(&otherTeams)
+		for _, t := range otherTeams {
+			database.DB.Model(&models.TeamJoinRequest{}).
+				Where("team_id = ? AND user_id = ? AND status = 'pending'", t.ID, joinRequest.UserID).
+				Update("status", "cancelled")
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": req.Action + "ed",
+		"status":  joinRequest.Status,
+	})
+}
+
+// GetMyJoinRequests - получить свои запросы на вступление
+func (s *Server) GetMyJoinRequests(c *gin.Context) {
+	userID, _ := middleware.GetUserID(c)
+
+	var requests []models.TeamJoinRequest
+	database.DB.Where("user_id = ?", userID).Order("created_at DESC").Find(&requests)
+
+	response := make([]gin.H, 0, len(requests))
+	for _, req := range requests {
+		var team models.Team
+		database.DB.First(&team, req.TeamID)
+
+		response = append(response, gin.H{
+			"id":        req.ID,
+			"teamId":    req.TeamID,
+			"teamName":  team.Name,
+			"status":    req.Status,
+			"createdAt": req.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// CancelJoinRequest - отменить свой запрос на вступление
+func (s *Server) CancelJoinRequest(c *gin.Context) {
+	requestID, err := strconv.ParseInt(c.Param("requestId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request ID"})
+		return
+	}
+
+	userID, _ := middleware.GetUserID(c)
+
+	var joinRequest models.TeamJoinRequest
+	if err := database.DB.Where("id = ? AND user_id = ?", requestID, userID).First(&joinRequest).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "request not found"})
+		return
+	}
+
+	if joinRequest.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "can only cancel pending requests"})
+		return
+	}
+
+	joinRequest.Status = "cancelled"
+	database.DB.Save(&joinRequest)
+
+	c.JSON(http.StatusOK, gin.H{"message": "request cancelled"})
 }

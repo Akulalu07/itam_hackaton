@@ -11,13 +11,15 @@ import {
   ChevronDown,
   ChevronUp,
   Users,
-  RefreshCw
+  RefreshCw,
+  SlidersHorizontal
 } from 'lucide-react';
 import { User } from '../../types';
 import { useSwipeStore, useTeamStore, useHackathonStore, useAuthStore } from '../../store/useStore';
 import { EmptyState } from '../../components/common';
 import { ROUTES } from '../../routes';
 import { getRarityColor } from '../../data/customization';
+import { SwipeFiltersModal } from './SwipeFiltersModal';
 
 // Skill level colors
 const skillLevelColors: Record<string, string> = {
@@ -41,12 +43,13 @@ interface SwipeCardProps {
   onSwipe: (direction: string) => void;
   onCardLeftScreen: (direction: string) => void;
   style?: React.CSSProperties;
+  isTop?: boolean;
 }
 
 /**
  * SwipeCard - Карточка пользователя для свайпа
  */
-function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
+function SwipeCard({ user, onSwipe, onCardLeftScreen, style, isTop = false }: SwipeCardProps) {
   const [expanded, setExpanded] = useState(false);
   
   // Получаем стили кастомизации
@@ -91,7 +94,7 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
 
   return (
     <TinderCard
-      className="absolute w-full h-full"
+      className={`absolute w-full h-full ${isTop ? 'swipe-card-top' : ''}`}
       onSwipe={onSwipe}
       onCardLeftScreen={onCardLeftScreen}
       preventSwipe={['up', 'down']}
@@ -262,15 +265,19 @@ function SwipeCard({ user, onSwipe, onCardLeftScreen, style }: SwipeCardProps) {
           </div>
         </div>
 
-        {/* Swipe Indicators */}
-        <div className="absolute top-1/2 -translate-y-1/2 left-6 opacity-0 transition-opacity duration-200 pointer-events-none swipe-right-indicator">
-          <div className="bg-success text-success-content px-4 py-2 rounded-lg font-bold rotate-[-20deg] border-4 border-success">
-            INVITE
+        {/* Swipe Indicators - LIKE (right) */}
+        <div className="absolute top-12 left-6 pointer-events-none swipe-like-indicator transition-all duration-200">
+          <div className="flex items-center gap-2 bg-success text-success-content px-6 py-3 rounded-2xl font-bold rotate-[-15deg] border-4 border-success shadow-2xl">
+            <Heart className="w-6 h-6 fill-current" />
+            <span className="text-xl">ПРИГЛАСИТЬ</span>
           </div>
         </div>
-        <div className="absolute top-1/2 -translate-y-1/2 right-6 opacity-0 transition-opacity duration-200 pointer-events-none swipe-left-indicator">
-          <div className="bg-error text-error-content px-4 py-2 rounded-lg font-bold rotate-[20deg] border-4 border-error">
-            SKIP
+        
+        {/* Swipe Indicators - NOPE (left) */}
+        <div className="absolute top-12 right-6 pointer-events-none swipe-nope-indicator transition-all duration-200">
+          <div className="flex items-center gap-2 bg-error text-error-content px-6 py-3 rounded-2xl font-bold rotate-[15deg] border-4 border-error shadow-2xl">
+            <X className="w-6 h-6" />
+            <span className="text-xl">ПРОПУСТИТЬ</span>
           </div>
         </div>
       </div>
@@ -299,6 +306,7 @@ export function SwipeDeck() {
   
   const [swipeDirection, setSwipeDirection] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   
   const currentIndex = deck.length - 1;
   const cardRefs = useRef<(any)[]>([]);
@@ -308,6 +316,13 @@ export function SwipeDeck() {
     const hackathonId = selectedHackathon?.id || user?.currentHackathonId;
     fetchDeck(hackathonId);
   }, [fetchDeck, selectedHackathon?.id, user?.currentHackathonId]);
+
+  // Обновить колоду после изменения фильтров
+  const handleFiltersApply = useCallback(() => {
+    const hackathonId = selectedHackathon?.id || user?.currentHackathonId;
+    resetDeck();
+    fetchDeck(hackathonId);
+  }, [fetchDeck, resetDeck, selectedHackathon?.id, user?.currentHackathonId]);
 
   // Swipe handlers
   const handleSwipe = useCallback(async (direction: string, swipedUser: User) => {
@@ -435,15 +450,31 @@ export function SwipeDeck() {
               Осталось: {deck.length} кандидатов
             </p>
           </div>
-          <button 
-            onClick={() => navigate(ROUTES.MY_TEAM)}
-            className="btn btn-ghost btn-sm"
-          >
-            <Users className="w-4 h-4" />
-            Команда
-          </button>
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={() => setFiltersOpen(true)}
+              className="btn btn-ghost btn-sm btn-circle"
+              title="Настройки поиска"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => navigate(ROUTES.MY_TEAM)}
+              className="btn btn-ghost btn-sm"
+            >
+              <Users className="w-4 h-4" />
+              Команда
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Filters Modal */}
+      <SwipeFiltersModal
+        isOpen={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        onApply={handleFiltersApply}
+      />
 
       {/* Card Stack */}
       <div className="flex-1 relative max-w-lg mx-auto w-full px-4 py-4">
@@ -454,6 +485,7 @@ export function SwipeDeck() {
               user={cardUser}
               onSwipe={(dir) => handleSwipe(dir, cardUser)}
               onCardLeftScreen={() => handleCardLeftScreen(cardUser.id)}
+              isTop={index === deck.length - 1}
               style={{
                 zIndex: index,
               }}
@@ -461,7 +493,6 @@ export function SwipeDeck() {
           ))}
         </div>
       </div>
-
       {/* Action Buttons */}
       <div className="px-4 py-6 bg-gradient-to-t from-base-100 via-base-100 to-transparent">
         <div className="flex items-center justify-center gap-6 max-w-lg mx-auto">

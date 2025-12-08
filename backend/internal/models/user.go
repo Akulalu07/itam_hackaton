@@ -42,6 +42,9 @@ type User struct {
 	CurrentHackathonID *int64 `gorm:"index" json:"currentHackathonId,omitempty"`
 	ProfileComplete    bool   `gorm:"default:false" json:"profileComplete"`
 
+	// Notification settings
+	NotificationsEnabled bool `gorm:"default:true" json:"notificationsEnabled"`
+
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
 }

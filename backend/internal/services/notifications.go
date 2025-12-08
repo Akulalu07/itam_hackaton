@@ -99,6 +99,18 @@ func (ns *NotificationService) NotifyMatch(teamID, userID int64, teamName, userN
 	})
 }
 
+// SendMatchNotification sends a match notification to a specific user
+func (ns *NotificationService) SendMatchNotification(userID int64, matchedUserName string) error {
+	return ns.PublishNotification(NotificationEvent{
+		Type:    "match",
+		Message: fmt.Sprintf("🎉 Новый мэтч! %s тоже хочет с тобой в команду!", matchedUserName),
+		Data: map[string]interface{}{
+			"userId":          userID,
+			"matchedUserName": matchedUserName,
+		},
+	})
+}
+
 func (ns *NotificationService) NotifyCaseOpened(userID, caseID int64, items []map[string]interface{}) error {
 	return ns.PublishNotification(NotificationEvent{
 		Type:    "case_opened",

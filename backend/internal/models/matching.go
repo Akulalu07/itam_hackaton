@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/lib/pq"
+)
 
 type Swipe struct {
 	ID           int64  `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -23,4 +27,30 @@ type MatchCandidate struct {
 	Username    string   `json:"username"`
 	SkillRating *int     `json:"skillRating,omitempty"`
 	Tags        []string `json:"tags"`
+}
+
+// SwipePreference - настройки поиска тиммейтов
+type SwipePreference struct {
+	ID          int64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID      int64 `gorm:"uniqueIndex:idx_user_hackathon_pref" json:"userId"`
+	HackathonID int64 `gorm:"uniqueIndex:idx_user_hackathon_pref" json:"hackathonId"`
+
+	// MMR диапазон
+	MinMMR *int `json:"minMmr,omitempty"`
+	MaxMMR *int `json:"maxMmr,omitempty"`
+
+	// Предпочтительные навыки
+	PreferredSkills pq.StringArray `gorm:"type:text[]" json:"preferredSkills,omitempty"`
+
+	// Уровень опыта: beginner, intermediate, advanced, expert
+	PreferredExperience pq.StringArray `gorm:"type:text[]" json:"preferredExperience,omitempty"`
+
+	// Предпочтительные роли: frontend, backend, designer, pm, etc.
+	PreferredRoles pq.StringArray `gorm:"type:text[]" json:"preferredRoles,omitempty"`
+
+	// Только с проверенными навыками?
+	VerifiedOnly bool `gorm:"default:false" json:"verifiedOnly"`
+
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
 }

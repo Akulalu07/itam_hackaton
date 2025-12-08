@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Users, Mail, User, Trophy, Zap } from 'lucide-react';
+import { Users, Mail, User, Trophy, Zap, Calendar } from 'lucide-react';
 import { useAuthStore, useHackathonStore, useInviteStore } from '../../store/useStore';
 import { ROUTES } from '../../routes';
 import { useEffect } from 'react';
@@ -113,6 +113,23 @@ export function DashboardPage() {
               <p className="text-sm text-base-content/60">Проверить инвайты от капитанов</p>
             </div>
             <div className="badge badge-ghost">{invites.length > 0 ? `${invites.length} новых` : 'нет новых'}</div>
+          </div>
+        </div>
+
+        {/* Hackathons Card */}
+        <div 
+          className="card bg-base-200 cursor-pointer hover:bg-base-300 transition-colors"
+          onClick={() => navigate(ROUTES.HACKATHONS)}
+        >
+          <div className="card-body flex-row items-center">
+            <div className="w-12 h-12 bg-warning/20 rounded-xl flex items-center justify-center">
+              <Calendar className="w-6 h-6 text-warning" />
+            </div>
+            <div className="flex-1 ml-4">
+              <h3 className="font-semibold">Хакатоны</h3>
+              <p className="text-sm text-base-content/60">Найти и выбрать хакатон</p>
+            </div>
+            <div className="badge badge-warning">{hackathons.length}</div>
           </div>
         </div>
 

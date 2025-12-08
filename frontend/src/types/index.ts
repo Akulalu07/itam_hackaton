@@ -84,7 +84,7 @@ export interface Hackathon {
 }
 
 // Team Status
-export type TeamStatus = 'open' | 'closed' | 'full';
+export type TeamStatus = 'open' | 'closed' | 'full' | 'looking' | 'ready';
 
 // Team
 export interface Team {
@@ -98,6 +98,14 @@ export interface Team {
   status?: TeamStatus;
   description?: string;
   lookingFor?: string[]; // Skills they need
+  // Customization
+  background?: string;
+  borderColor?: string;
+  nameColor?: string;
+  avatarUrl?: string;
+  // Captain and member count for list view
+  captain?: User;
+  memberCount?: number;
   createdAt: Date;
 }
 
@@ -131,6 +139,35 @@ export interface SwipeAction {
   targetUserId: string;
   direction: 'left' | 'right';
   createdAt: Date;
+}
+
+// Notification types
+export type NotificationType = 
+  | 'match' 
+  | 'team_invite' 
+  | 'team_request' 
+  | 'hackathon_start' 
+  | 'hackathon_reminder'
+  | 'team_accepted'
+  | 'team_rejected';
+
+// Notification
+export interface Notification {
+  id: number;
+  type: NotificationType;
+  title: string;
+  message: string;
+  data?: {
+    teamId?: number;
+    matchId?: number;
+    hackathonId?: number;
+    fromUserId?: number;
+    fromUserName?: string;
+    teamName?: string;
+    requestId?: number;
+  };
+  isRead: boolean;
+  createdAt: string;
 }
 
 // Auth State

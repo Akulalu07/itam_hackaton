@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Search, 
@@ -12,10 +12,12 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  Loader2
+  Loader2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { Hackathon } from '../../types';
 import axiosClient from '../../api/axiosClient';
+import { ImageCropper } from '../../components/common/ImageCropper';
 
 // Status badge styles
 const statusStyles: Record<string, string> = {
@@ -53,7 +55,17 @@ export function HackathonManager() {
     registrationDeadline: '',
     minTeamSize: 2,
     maxTeamSize: 5,
+    imageUrl: '',
+    openRegistration: true, // По умолчанию открываем регистрацию
   });
+  
+  // Image upload state
+  const [tempImageUrl, setTempImageUrl] = useState<string | null>(null);
+  const [showCropper, setShowCropper] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Validation errors
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Fetch hackathons from API
   const fetchHackathons = async () => {
@@ -115,6 +127,13 @@ export function HackathonManager() {
     return matchesSearch && matchesStatus;
   });
 
+  // Close modal and reset state
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setShowCropper(false);
+    setTempImageUrl(null);
+  };
+
   // Open modal for new hackathon
   const openNewModal = () => {
     setEditingHackathon(null);
@@ -126,7 +145,12 @@ export function HackathonManager() {
       registrationDeadline: '',
       minTeamSize: 2,
       maxTeamSize: 5,
+      imageUrl: '',
+      openRegistration: true,
     });
+    setValidationErrors([]);
+    setShowCropper(false);
+    setTempImageUrl(null);
     setIsModalOpen(true);
   };
 
@@ -141,34 +165,117 @@ export function HackathonManager() {
       registrationDeadline: hackathon.registrationDeadline.toISOString().split('T')[0],
       minTeamSize: hackathon.minTeamSize,
       maxTeamSize: hackathon.maxTeamSize,
+      imageUrl: hackathon.imageUrl || '',
+      openRegistration: hackathon.status === 'registration',
     });
+    setValidationErrors([]);
+    setShowCropper(false);
+    setTempImageUrl(null);
     setIsModalOpen(true);
+  };
+
+  // Validate dates
+  const validateDates = (): string[] => {
+    const errors: string[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const startDate = new Date(formData.startDate);
+    const endDate = new Date(formData.endDate);
+    const regDeadline = new Date(formData.registrationDeadline);
+    
+    // Проверка: начало не раньше чем завтра
+    const minStartDate = new Date(today);
+    minStartDate.setDate(minStartDate.getDate() + 1);
+    
+    if (startDate < minStartDate) {
+      errors.push('Хакатон должен начинаться минимум завтра');
+    }
+    
+    if (endDate <= startDate) {
+      errors.push('Дата окончания должна быть позже даты начала');
+    }
+    
+    if (regDeadline >= startDate) {
+      errors.push('Дедлайн регистрации должен быть до начала хакатона');
+    }
+    
+    if (regDeadline < today) {
+      errors.push('Дедлайн регистрации не может быть в прошлом');
+    }
+    
+    return errors;
+  };
+
+  // Handle image file select
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Пожалуйста, выберите изображение');
+      return;
+    }
+    
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Размер файла не должен превышать 10MB');
+      return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = () => {
+      setTempImageUrl(reader.result as string);
+      setShowCropper(true);
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Handle cropped image
+  const handleCroppedImage = (croppedImageUrl: string) => {
+    setFormData(prev => ({ ...prev, imageUrl: croppedImageUrl }));
+    setShowCropper(false);
+    setTempImageUrl(null);
   };
 
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate dates
+    const dateErrors = validateDates();
+    if (dateErrors.length > 0) {
+      setValidationErrors(dateErrors);
+      return;
+    }
+    setValidationErrors([]);
+    
     try {
+      const payload = {
+        name: formData.name,
+        description: formData.description,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        registrationDeadline: formData.registrationDeadline,
+        minTeamSize: formData.minTeamSize,
+        maxTeamSize: formData.maxTeamSize,
+        imageUrl: formData.imageUrl, // Base64 or URL
+        status: formData.openRegistration ? 'registration_open' : 'draft',
+      };
+
       if (editingHackathon) {
         // Update existing via API
-        await axiosClient.put(`/admin/api/hackathons/${editingHackathon.id}`, {
-          name: formData.name,
-          description: formData.description,
-          startDate: formData.startDate,
-          endDate: formData.endDate,
-          registrationDeadline: formData.registrationDeadline,
-          minTeamSize: formData.minTeamSize,
-          maxTeamSize: formData.maxTeamSize,
-        });
+        await axiosClient.put(`/api/admin/hackathons/${editingHackathon.id}`, payload);
       } else {
         // Create new via API
-        await axiosClient.post('/admin/api/hackathons', {
-          name: formData.name,
-          description: formData.description,
-          startDate: formData.startDate,
-          endDate: formData.endDate,
-          registrationDeadline: formData.registrationDeadline,
+        await axiosClient.post('/api/admin/hackathons', {
+          ...payload,
           teamSize: formData.maxTeamSize,
           maxTeams: 100,
         });
@@ -176,10 +283,10 @@ export function HackathonManager() {
       
       // Refresh list
       await fetchHackathons();
-      setIsModalOpen(false);
+      closeModal();
     } catch (err: any) {
       console.error('Failed to save hackathon:', err);
-      alert(err.response?.data?.error || 'Не удалось сохранить хакатон');
+      setValidationErrors([err.response?.data?.error || 'Не удалось сохранить хакатон']);
     }
   };
 
@@ -187,7 +294,7 @@ export function HackathonManager() {
   const handleDelete = async (id: string) => {
     if (confirm('Удалить хакатон?')) {
       try {
-        await axiosClient.delete(`/admin/api/hackathons/${id}`);
+        await axiosClient.delete(`/api/admin/hackathons/${id}`);
         await fetchHackathons();
       } catch (err: any) {
         console.error('Failed to delete hackathon:', err);
@@ -316,9 +423,24 @@ export function HackathonManager() {
             {filteredHackathons.map(hackathon => (
               <tr key={hackathon.id} className="hover">
                 <td>
-                  <div className="font-semibold">{hackathon.name}</div>
-                  <div className="text-sm text-base-content/60 line-clamp-1">
-                    {hackathon.description}
+                  <div className="flex items-center gap-3">
+                    {hackathon.imageUrl ? (
+                      <img 
+                        src={hackathon.imageUrl} 
+                        alt={hackathon.name}
+                        className="w-16 h-9 object-cover rounded"
+                      />
+                    ) : (
+                      <div className="w-16 h-9 bg-base-200 rounded flex items-center justify-center">
+                        <ImageIcon className="w-4 h-4 text-base-content/30" />
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-semibold">{hackathon.name}</div>
+                      <div className="text-sm text-base-content/60 line-clamp-1">
+                        {hackathon.description}
+                      </div>
+                    </div>
                   </div>
                 </td>
                 <td>
@@ -389,7 +511,7 @@ export function HackathonManager() {
           <div className="modal-box max-w-2xl">
             <button 
               className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-              onClick={() => setIsModalOpen(false)}
+              onClick={closeModal}
             >
               <X className="w-4 h-4" />
             </button>
@@ -399,6 +521,68 @@ export function HackathonManager() {
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Validation errors */}
+              {validationErrors.length > 0 && (
+                <div className="alert alert-error">
+                  <AlertCircle className="w-5 h-5" />
+                  <div>
+                    {validationErrors.map((error, index) => (
+                      <p key={index}>{error}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Image upload */}
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Обложка хакатона</span>
+                </label>
+                <div className="flex items-start gap-4">
+                  <div 
+                    className="relative w-48 h-28 bg-base-200 rounded-lg overflow-hidden border-2 border-dashed border-base-300 flex items-center justify-center cursor-pointer hover:border-primary transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {formData.imageUrl ? (
+                      <>
+                        <img 
+                          src={formData.imageUrl} 
+                          alt="Обложка" 
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          className="absolute top-1 right-1 btn btn-circle btn-xs btn-error"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFormData(prev => ({ ...prev, imageUrl: '' }));
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-center p-2">
+                        <ImageIcon className="w-8 h-8 mx-auto text-base-content/40" />
+                        <p className="text-xs text-base-content/60 mt-1">Нажмите для загрузки</p>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageSelect}
+                  />
+                  <div className="text-sm text-base-content/60">
+                    <p>Рекомендуемый размер: 800×450</p>
+                    <p>Формат: JPG, PNG</p>
+                    <p>Макс. размер: 10MB</p>
+                  </div>
+                </div>
+              </div>
+
               <div className="form-control">
                 <label className="label">
                   <span className="label-text">Название</span>
@@ -494,11 +678,29 @@ export function HackathonManager() {
                 </div>
               </div>
 
+              {/* Registration status toggle */}
+              <div className="form-control">
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-success"
+                    checked={formData.openRegistration}
+                    onChange={(e) => setFormData(prev => ({ ...prev, openRegistration: e.target.checked }))}
+                  />
+                  <span className="label-text">Открыть регистрацию сразу</span>
+                </label>
+                <span className="text-sm text-base-content/60 ml-1">
+                  {formData.openRegistration 
+                    ? 'Участники смогут регистрироваться на хакатон сразу после создания' 
+                    : 'Хакатон будет создан как черновик, регистрацию нужно будет открыть отдельно'}
+                </span>
+              </div>
+
               <div className="modal-action">
                 <button 
                   type="button" 
                   className="btn btn-ghost"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={closeModal}
                 >
                   Отмена
                 </button>
@@ -509,9 +711,22 @@ export function HackathonManager() {
             </form>
           </div>
           <form method="dialog" className="modal-backdrop">
-            <button onClick={() => setIsModalOpen(false)}>close</button>
+            <button onClick={closeModal}>close</button>
           </form>
         </dialog>
+      )}
+
+      {/* Image Cropper Modal */}
+      {showCropper && tempImageUrl && (
+        <ImageCropper
+          imageUrl={tempImageUrl}
+          onCrop={handleCroppedImage}
+          onCancel={() => {
+            setShowCropper(false);
+            setTempImageUrl(null);
+          }}
+          aspectRatio={16 / 9}
+        />
       )}
     </div>
   );

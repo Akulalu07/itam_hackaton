@@ -43,10 +43,7 @@ func Close() error {
 }
 
 func AutoMigrate() error {
-	// Создаём таблицы если их нет, но не удаляем существующие constraints
-	migrator := DB.Migrator()
-
-	// Миграция моделей по одной для лучшего контроля
+	// Миграция всех моделей - GORM добавит новые колонки автоматически
 	modelsToMigrate := []interface{}{
 		&models.User{},
 		&models.Case{},
@@ -60,6 +57,8 @@ func AutoMigrate() error {
 		&models.TeamInvite{},
 		&models.Swipe{},
 		&models.Match{},
+		&models.SwipePreference{},
+		&models.Notification{},
 		// Customization models
 		&models.CustomizationItem{},
 		&models.UserCase{},
@@ -67,12 +66,9 @@ func AutoMigrate() error {
 		&models.ProfileCustomization{},
 	}
 
-	for _, model := range modelsToMigrate {
-		if !migrator.HasTable(model) {
-			if err := DB.AutoMigrate(model); err != nil {
-				return fmt.Errorf("failed to migrate %T: %w", model, err)
-			}
-		}
+	// AutoMigrate создаёт таблицы и добавляет новые колонки
+	if err := DB.AutoMigrate(modelsToMigrate...); err != nil {
+		return fmt.Errorf("failed to auto migrate: %w", err)
 	}
 
 	return nil

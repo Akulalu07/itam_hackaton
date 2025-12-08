@@ -11,6 +11,7 @@ export const ROUTES = {
   // Participant routes
   DASHBOARD: '/dashboard',
   SELECT_HACKATHON: '/select-hackathon',
+  HACKATHONS: '/hackathons',
   PROFILE: '/profile',
   PROFILE_EDIT: '/profile/edit',
   SKILL_TESTS: '/skill-tests',
@@ -21,6 +22,7 @@ export const ROUTES = {
   SWIPE: '/swipe',
   MY_TEAM: '/team',
   TEAM_MANAGE: '/team/manage',
+  BROWSE_TEAMS: '/teams',
   
   // Member routes
   INVITES: '/invites',

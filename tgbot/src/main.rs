@@ -1,8 +1,10 @@
 mod bot;
+mod callbacks;
 mod notifications;
 mod redis_client;
 
 use bot::{answer, Command};
+use callbacks::handle_callback_query;
 use teloxide::prelude::*;
 
 #[tokio::main]
@@ -41,11 +43,16 @@ async fn main() {
     });
 
     // Setup command handler
-    let handler = dptree::entry().branch(
-        Update::filter_message()
-            .filter_command::<Command>()
-            .endpoint(answer),
-    );
+    let handler = dptree::entry()
+        .branch(
+            Update::filter_message()
+                .filter_command::<Command>()
+                .endpoint(answer),
+        )
+        .branch(
+            Update::filter_callback_query()
+                .endpoint(handle_callback_query),
+        );
 
     // Start dispatcher
     Dispatcher::builder(bot, handler)

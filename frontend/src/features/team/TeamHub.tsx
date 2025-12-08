@@ -14,12 +14,16 @@ import {
   ToggleLeft,
   ToggleRight,
   Sparkles,
-  Search
+  Search,
+  Palette,
+  UserPlus
 } from 'lucide-react';
 import { useAuthStore, useTeamStore } from '../../store/useStore';
 import { ROUTES } from '../../routes';
 import { User } from '../../types';
 import { Badge, getTitleVariant } from '../../components/gamification/Badge';
+import { TeamSettings } from './TeamSettings';
+import { JoinRequests } from './JoinRequests';
 
 // Skill level badges
 const skillLevelBadge: Record<string, string> = {
@@ -143,10 +147,12 @@ function TeamMemberCard({ member, isCaptain, onKick }: TeamMemberCardProps) {
 export function TeamHub() {
   const navigate = useNavigate();
   useAuthStore(); // для будущего использования
-  const { currentTeam, teamMembers, kickMember, updateTeamStatus } = useTeamStore();
+  const { currentTeam, teamMembers, kickMember, updateTeamStatus, fetchMyTeam } = useTeamStore();
   
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCustomization, setShowCustomization] = useState(false);
+  const [activeTab, setActiveTab] = useState<'members' | 'requests'>('members');
 
   // Генерация ссылки-приглашения
   const generateInviteLink = useCallback(() => {
@@ -172,10 +178,10 @@ export function TeamHub() {
     kickMember(currentTeam.id, memberId);
   }, [currentTeam, kickMember]);
 
-  // Переключение статуса команды
+  // Переключение статуса команды (looking - ищем участников, closed - не ищем)
   const toggleTeamStatus = useCallback(() => {
     if (!currentTeam) return;
-    const newStatus = currentTeam.status === 'open' ? 'closed' : 'open';
+    const newStatus = currentTeam.status === 'looking' ? 'closed' : 'looking';
     updateTeamStatus(currentTeam.id, newStatus);
   }, [currentTeam, updateTeamStatus]);
 
@@ -224,8 +230,8 @@ export function TeamHub() {
               <div className="flex-1">
                 <h2 className="text-xl font-bold">{currentTeam.name}</h2>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={`badge ${currentTeam.status === 'open' ? 'badge-success' : 'badge-warning'}`}>
-                    {currentTeam.status === 'open' ? 'Ищем участников' : 'Набор закрыт'}
+                  <span className={`badge ${currentTeam.status === 'looking' ? 'badge-success' : 'badge-warning'}`}>
+                    {currentTeam.status === 'looking' ? 'Ищем участников' : 'Набор закрыт'}
                   </span>
                   <span className="text-sm text-base-content/60">
                     {teamMembers.length}/{currentTeam.maxMembers || 5} участников
@@ -260,16 +266,16 @@ export function TeamHub() {
             <div>
               <p className="font-medium">Статус набора</p>
               <p className="text-sm text-base-content/60">
-                {currentTeam.status === 'open' 
+                {currentTeam.status === 'looking' 
                   ? 'Команда ищет участников' 
                   : 'Набор в команду закрыт'}
               </p>
             </div>
             <button 
               onClick={toggleTeamStatus}
-              className={`btn btn-lg ${currentTeam.status === 'open' ? 'btn-success' : 'btn-warning'}`}
+              className={`btn btn-lg ${currentTeam.status === 'looking' ? 'btn-success' : 'btn-warning'}`}
             >
-              {currentTeam.status === 'open' ? (
+              {currentTeam.status === 'looking' ? (
                 <ToggleRight className="w-6 h-6" />
               ) : (
                 <ToggleLeft className="w-6 h-6" />
@@ -306,6 +312,19 @@ export function TeamHub() {
                 )}
               </button>
             </div>
+          </div>
+
+          <div className="divider my-2"></div>
+
+          {/* Customization button */}
+          <div className="py-3">
+            <button 
+              onClick={() => setShowCustomization(true)}
+              className="btn btn-outline btn-block gap-2"
+            >
+              <Palette className="w-5 h-5" />
+              Настроить внешний вид
+            </button>
           </div>
         </div>
       )}
@@ -346,30 +365,61 @@ export function TeamHub() {
 
       {/* Team members */}
       <div className="px-4">
-        <h3 className="font-semibold mb-4 flex items-center gap-2">
-          <Users className="w-5 h-5 text-primary" />
-          Состав команды ({teamMembers.length})
-        </h3>
-
-        <div className="space-y-3">
-          {teamMembers.map((member) => (
-            <TeamMemberCard
-              key={member.id}
-              member={member}
-              isCaptain={member.id === currentTeam.captainId}
-              onKick={member.id !== currentTeam.captainId ? () => handleKick(member.id) : undefined}
-            />
-          ))}
+        {/* Tabs */}
+        <div className="tabs tabs-boxed mb-4">
+          <button 
+            className={`tab flex-1 gap-2 ${activeTab === 'members' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('members')}
+          >
+            <Users className="w-4 h-4" />
+            Состав ({teamMembers.length})
+          </button>
+          <button 
+            className={`tab flex-1 gap-2 ${activeTab === 'requests' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('requests')}
+          >
+            <UserPlus className="w-4 h-4" />
+            Заявки
+          </button>
         </div>
 
-        {teamMembers.length === 0 && (
-          <div className="text-center py-8 text-base-content/60">
-            <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p>В команде пока только вы</p>
-            <p className="text-sm">Начните искать участников!</p>
+        {activeTab === 'members' ? (
+          <div className="space-y-3">
+            {teamMembers.filter(m => m && m.id).map((member) => (
+              <TeamMemberCard
+                key={member.id}
+                member={member}
+                isCaptain={member.id === currentTeam.captainId}
+                onKick={member.id !== currentTeam.captainId ? () => handleKick(member.id) : undefined}
+              />
+            ))}
+
+            {teamMembers.length === 0 && (
+              <div className="text-center py-8 text-base-content/60">
+                <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                <p>В команде пока только вы</p>
+                <p className="text-sm">Начните искать участников!</p>
+              </div>
+            )}
           </div>
+        ) : (
+          <JoinRequests 
+            teamId={currentTeam.id} 
+            onRequestHandled={() => fetchMyTeam()}
+          />
         )}
       </div>
+
+      {/* Team Settings Modal */}
+      {showCustomization && currentTeam && (
+        <TeamSettings
+          team={currentTeam}
+          onClose={() => setShowCustomization(false)}
+          onUpdate={() => {
+            fetchMyTeam();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -21,6 +21,8 @@ import {
   InvitesPage,
   SkillTestsPage,
   InventoryPage,
+  HackathonsPage,
+  BrowseTeamsPage,
   AdminDashboardPage,
   AdminHackathonsPage,
   AdminHackathonCreatePage,
@@ -108,6 +110,7 @@ function App() {
             
             {/* Hackathon Selection */}
             <Route path={ROUTES.SELECT_HACKATHON} element={<SelectHackathonPage />} />
+            <Route path={ROUTES.HACKATHONS} element={<HackathonsPage />} />
             
             {/* Profile */}
             <Route path={ROUTES.PROFILE} element={<ProfilePage />} />
@@ -145,6 +148,9 @@ function App() {
             
             {/* Invites */}
             <Route path={ROUTES.INVITES} element={<InvitesPage />} />
+            
+            {/* Browse Teams */}
+            <Route path={ROUTES.BROWSE_TEAMS} element={<BrowseTeamsPage />} />
           </Route>
 
           {/* ================================ */}

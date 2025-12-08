@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
-    telegram_user_id BIGINT UNIQUE NOT NULL,
+    telegram_user_id BIGINT NOT NULL,
     username TEXT,
     name TEXT,
     bio TEXT,
@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT DEFAULT 'user',
     authorized BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT uni_users_telegram_user_id UNIQUE (telegram_user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_telegram_user_id ON users(telegram_user_id);

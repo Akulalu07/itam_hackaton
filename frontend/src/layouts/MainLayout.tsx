@@ -12,6 +12,7 @@ import {
 import { useAuthStore, useUIStore } from '../store/useStore';
 import { ROUTES } from '../routes';
 import { useState } from 'react';
+import { NotificationBell } from '../components/common';
 
 /**
  * MainLayout - Основной layout для участников (Mobile-First)
@@ -43,7 +44,8 @@ export function MainLayout() {
         <div className="flex-1">
           <span className="text-xl font-bold text-primary">ITAM Hack</span>
         </div>
-        <div className="flex-none">
+        <div className="flex-none flex items-center gap-1">
+          <NotificationBell />
           <button 
             className="btn btn-ghost btn-circle"
             onClick={() => setShowMenu(!showMenu)}
