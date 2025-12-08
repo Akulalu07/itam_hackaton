@@ -12,12 +12,35 @@ use crate::redis_client;
 pub enum Command {
     #[command(description = "получить логин-токен")]
     Login,
+    Start,
 }
 
 /// Handles bot command responses
 pub async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
     match cmd {
         Command::Login => {
+            let token = match generate_unique_token(&msg).await {
+                Ok(t) => t,
+                Err(e) => {
+                    log::error!("Error generating token: {}", e);
+                    bot.send_message(msg.chat.id, "Ошибка при генерации токена")
+                        .await?;
+                    return Ok(());
+                }
+            };
+
+            bot.send_message(msg.chat.id, format!("Ваш токен: `{}`", token))
+                .parse_mode(ParseMode::MarkdownV2)
+                .await?;
+
+            bot.send_message(
+                msg.chat.id,
+                "Используйте этот токен для авторизации на сайте",
+            )
+            .await?;
+        }
+
+        Command::Start => {
             let token = match generate_unique_token(&msg).await {
                 Ok(t) => t,
                 Err(e) => {
@@ -49,7 +72,7 @@ pub async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> 
 /// - Key: generated token
 /// - Value: "tg_id;tg_username;hh:mm"
 /// - Expiration: 600 seconds (10 minutes)
-async fn generate_unique_token(msg: &Message) -> anyhow::Result<String> {
+async fn generate_unique_token(msg: &Message) -> anyhow::Result<String>{
     use ::redis::AsyncCommands;
     let mut redis_conn = redis_client::create_redis_conn().await?;
 
@@ -64,12 +87,9 @@ async fn generate_unique_token(msg: &Message) -> anyhow::Result<String> {
                 .and_then(|u| u.username.clone())
                 .unwrap_or_else(|| "-".into());
 
-            // Format: "tg_id;tg_username;time" where time is in hh:mm format
             let time = Local::now().format("%H:%M").to_string();
             let value = format!("{};{};{}", user_id_u64, username, time);
 
-            // Save token to Redis: key = token, value = "tg_id;tg_username;hh:mm"
-            // Token expires after 600 seconds (10 minutes)
             let _: () = redis_conn.set_ex(&token, &value, 600).await?;
 
             log::info!("Token saved to Redis - key: {}, value: {}", token, value);
@@ -79,7 +99,6 @@ async fn generate_unique_token(msg: &Message) -> anyhow::Result<String> {
     }
 }
 
-/// Generates a random alphanumeric string
 fn random_string() -> String {
     let mut rng = thread_rng();
     (0..16).map(|_| rng.sample(Alphanumeric) as char).collect()
