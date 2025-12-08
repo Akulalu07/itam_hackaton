@@ -26,3 +26,23 @@ docker compose pull tgbot
 cd deploy/local
 docker compose up
 ```
+
+## Архитектура
+![Логотип проекта](./Untitled.jpg)
+
+
+## Иерархия папок
+```
+.
+├── backend                      #Очевидно здесь бекенд
+│   └── ...
+├── deploy
+│   ├── docker-compose.yml       # Для глобальной работы 
+│   ├── local
+|   |   └── docker-compose.yml   # Для локальной работы
+├── frontend                     #Очевидно здесь фронтенд
+│   └── ...
+├── tgbot                        #Очевидно здесь тг бот
+│   └── ...
+└── Untitled.jpg 
+```
