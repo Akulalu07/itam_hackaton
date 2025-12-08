@@ -22,13 +22,14 @@ type User struct {
 	Role           UserRole `gorm:"type:varchar(30);default:'user'" json:"role"`
 
 	// Profile fields
-	Name        string         `json:"name"`
-	Bio         string         `json:"bio"`
-	AvatarURL   string         `json:"avatarUrl"`
-	Skills      pq.StringArray `gorm:"type:text[]" json:"skills"`
-	Experience  string         `json:"experience"`                    // junior, middle, senior
-	LookingFor  pq.StringArray `gorm:"type:text[]" json:"lookingFor"` // roles they want in team
-	ContactInfo string         `json:"contactInfo"`                   // telegram, email, etc.
+	Name           string         `json:"name"`
+	Bio            string         `json:"bio"`
+	AvatarURL      string         `json:"avatarUrl"`
+	Skills         pq.StringArray `gorm:"type:text[]" json:"skills"`
+	VerifiedSkills pq.StringArray `gorm:"type:text[]" json:"verifiedSkills"` // Навыки, подтверждённые тестами
+	Experience     string         `json:"experience"`                        // junior, middle, senior
+	LookingFor     pq.StringArray `gorm:"type:text[]" json:"lookingFor"`     // roles they want in team
+	ContactInfo    string         `json:"contactInfo"`                       // telegram, email, etc.
 
 	// Gamification fields
 	Pts int `gorm:"default:0" json:"pts"`    // Points - очки за активность

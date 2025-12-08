@@ -16,17 +16,19 @@ const mapBackendRole = (role: string): UserRole => {
 };
 
 // Трансформирует строковые скиллы с бэкенда в объекты UserSkill
-const mapSkillsFromBackend = (skills: string[] | null | undefined): UserSkill[] => {
-  console.log('[DEBUG] mapSkillsFromBackend input:', skills, 'type:', typeof skills, 'isArray:', Array.isArray(skills));
+const mapSkillsFromBackend = (skills: string[] | null | undefined, verifiedSkills: string[] | null | undefined = []): UserSkill[] => {
+  console.log('[DEBUG] mapSkillsFromBackend input:', skills, 'verifiedSkills:', verifiedSkills);
   if (!skills || !Array.isArray(skills)) {
     console.log('[DEBUG] skills empty or not array, returning []');
     return [];
   }
+  const verifiedSet = new Set(verifiedSkills || []);
   const result = skills.map((name, index) => ({
     id: `skill-${index}`,
     name,
     level: 'intermediate' as const,
     category: 'other' as const,
+    verified: verifiedSet.has(name),
   }));
   console.log('[DEBUG] mapSkillsFromBackend output:', result);
   return result;
@@ -36,7 +38,7 @@ const mapSkillsFromBackend = (skills: string[] | null | undefined): UserSkill[] 
 // Экспортируется для использования в TokenAuthPage
 export const transformUserFromBackend = (data: any): User => {
   console.log('[DEBUG] transformUserFromBackend input data:', data);
-  console.log('[DEBUG] data.skills:', data.skills);
+  console.log('[DEBUG] data.skills:', data.skills, 'data.verifiedSkills:', data.verifiedSkills);
   
   // Трансформируем customization если есть
   let customization: User['customization'] = undefined;
@@ -115,7 +117,7 @@ export const transformUserFromBackend = (data: any): User => {
     bio: data.bio || '',
     role: mapBackendRole(data.role),
     status: (data.teamId ? 'in_team' : 'looking') as UserStatus,
-    skills: mapSkillsFromBackend(data.skills),
+    skills: mapSkillsFromBackend(data.skills, data.verifiedSkills),
     experience: data.experience || '',
     lookingFor: data.lookingFor || [],
     contactInfo: data.contactInfo || '',
@@ -145,6 +147,7 @@ export interface UpdateProfileData {
   pts?: number;
   mmr?: number;
   lookingFor?: string[];
+  verifiedSkills?: string[]; // Для прямой отправки verified skills
 }
 
 // Преобразует данные профиля для бэкенда
@@ -162,6 +165,13 @@ const transformProfileForBackend = (data: UpdateProfileData) => {
   // Преобразуем skills из UserSkill[] в string[]
   if (data.skills !== undefined) {
     result.skills = data.skills.map(s => s.name);
+    // Также отправляем verified skills
+    result.verifiedSkills = data.skills.filter(s => s.verified).map(s => s.name);
+  }
+  
+  // Если отдельно передаём verifiedSkills
+  if (data.verifiedSkills !== undefined) {
+    result.verifiedSkills = data.verifiedSkills;
   }
   
   return result;

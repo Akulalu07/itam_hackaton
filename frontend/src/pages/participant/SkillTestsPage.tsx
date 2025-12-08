@@ -11,6 +11,7 @@ import {
   Filter
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useStore';
+import { userService } from '../../api';
 import { 
   SkillTestFlow, 
   SkillTestCard 
@@ -115,7 +116,7 @@ export function SkillTestsPage() {
     setStage('testing');
   };
   
-  const handleCompleteTest = (answers: UserAnswer[], timeSpent: number) => {
+  const handleCompleteTest = async (answers: UserAnswer[], timeSpent: number) => {
     if (!selectedTest) return;
     
     const result = calculateTestResult(selectedTest, answers, timeSpent);
@@ -146,7 +147,16 @@ export function SkillTestsPage() {
         updatedSkills = [...user.skills, newSkill];
       }
       
+      // Локальное обновление
       updateProfileLocal({ skills: updatedSkills });
+      
+      // Сохраняем в БД через API
+      try {
+        await userService.updateProfile({ skills: updatedSkills });
+        console.log('[SkillTest] Verified skill saved to DB:', selectedTest.skillName);
+      } catch (error) {
+        console.error('[SkillTest] Failed to save verified skill:', error);
+      }
     }
   };
   
@@ -208,7 +218,7 @@ export function SkillTestsPage() {
   
   // List stage - выбор теста
   return (
-    <div className="min-h-screen bg-base-100 pb-24">
+    <div className="min-h-screen bg-base-100">
       {/* Header */}
       <div className="bg-base-200 border-b border-base-300 p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
@@ -297,24 +307,26 @@ export function SkillTestsPage() {
         )}
       </div>
       
-      {/* Stats footer */}
-      <div className="fixed bottom-20 left-0 right-0 bg-base-200 border-t border-base-300 p-4">
-        <div className="flex justify-around text-center">
-          <div>
-            <p className="text-2xl font-bold text-primary">{allSkillTests.length}</p>
-            <p className="text-xs text-base-content/60">Тестов доступно</p>
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-success">
-              {user?.skills.filter(s => s.verified).length || 0}
-            </p>
-            <p className="text-xs text-base-content/60">Подтверждено</p>
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-warning">
-              {allSkillTests.reduce((acc, t) => acc + t.questions.length, 0)}
-            </p>
-            <p className="text-xs text-base-content/60">Вопросов</p>
+      {/* Stats section */}
+      <div className="p-4 pt-0">
+        <div className="bg-base-200 rounded-xl p-4 mt-4">
+          <div className="flex justify-around text-center">
+            <div>
+              <p className="text-2xl font-bold text-primary">{allSkillTests.length}</p>
+              <p className="text-xs text-base-content/60">Тестов доступно</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-success">
+                {user?.skills.filter(s => s.verified).length || 0}
+              </p>
+              <p className="text-xs text-base-content/60">Подтверждено</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-warning">
+                {allSkillTests.reduce((acc, t) => acc + t.questions.length, 0)}
+              </p>
+              <p className="text-xs text-base-content/60">Вопросов</p>
+            </div>
           </div>
         </div>
       </div>

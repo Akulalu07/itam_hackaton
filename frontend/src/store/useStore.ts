@@ -185,6 +185,25 @@ export const useAuthStore = create<AuthStore>()(
         set({ isLoading: true, error: null });
         try {
           const serverUser = await userService.getProfile();
+          
+          // Получаем текущую кастомизацию из inventoryStore (она может быть более актуальной)
+          const inventoryCustomization = useInventoryStore.getState().customization;
+          
+          // Приоритет: inventoryStore > serverUser > currentUser
+          // inventoryStore всегда самый актуальный, так как обновляется при equipItem
+          const hasInventoryCustomization = inventoryCustomization && (
+            inventoryCustomization.background || 
+            inventoryCustomization.nameColor || 
+            inventoryCustomization.avatarFrame ||
+            inventoryCustomization.title ||
+            inventoryCustomization.effect ||
+            (inventoryCustomization.badges && inventoryCustomization.badges.length > 0)
+          );
+          
+          const finalCustomization = hasInventoryCustomization 
+            ? inventoryCustomization 
+            : (serverUser.customization || currentUser?.customization);
+          
           // Сохраняем локальные pts/mmr если они больше серверных (сервер может не хранить pts)
           const mergedUser = {
             ...serverUser,
@@ -192,8 +211,8 @@ export const useAuthStore = create<AuthStore>()(
             mmr: Math.max(serverUser.mmr || 0, currentUser?.mmr || 0),
             avatar: serverUser.avatar || currentUser?.avatar,
             title: getTitleByPoints(Math.max(serverUser.pts || 0, currentUser?.pts || 0)),
-            // Важно: сохраняем кастомизацию с сервера
-            customization: serverUser.customization,
+            // Используем приоритетную кастомизацию
+            customization: finalCustomization,
           };
           set({ user: mergedUser, isAuthenticated: true, isLoading: false });
         } catch (error) {
@@ -893,6 +912,12 @@ export const useInventoryStore = create<InventoryStore>()(
             isLoading: false,
             lastFetched: new Date(),
           });
+          
+          // Синхронизируем кастомизацию в authStore
+          const authStore = useAuthStore.getState();
+          if (authStore.user) {
+            authStore.updateProfileLocal({ customization });
+          }
         } catch (error) {
           console.error('Fetch inventory error:', error);
           set({

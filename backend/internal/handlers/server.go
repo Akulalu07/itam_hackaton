@@ -182,6 +182,8 @@ func connectToRedis() *redis.Client {
 	redisUser := getEnv("REDISUSER", "")
 	redisPass := getEnv("REDISPASSWORD", "")
 
+	fmt.Printf("[DEBUG] Redis config: addr=%s, user='%s', pass='%s'\n", redisAddr, redisUser, redisPass)
+
 	opts := &redis.Options{
 		Addr: redisAddr,
 		DB:   0,
@@ -199,5 +201,6 @@ func connectToRedis() *redis.Client {
 	if err := client.Ping(context.Background()).Err(); err != nil {
 		panic("Failed to connect Redis: " + err.Error())
 	}
+	fmt.Println("[DEBUG] Successfully connected to Redis!")
 	return client
 }

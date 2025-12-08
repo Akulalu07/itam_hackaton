@@ -527,6 +527,7 @@ func (s *Server) GetMe(c *gin.Context) {
 		"username":           user.Username,
 		"role":               user.Role,
 		"skills":             user.Skills,
+		"verifiedSkills":     user.VerifiedSkills,
 		"bio":                user.Bio,
 		"avatarUrl":          user.AvatarURL,
 		"experience":         user.Experience,
@@ -546,16 +547,17 @@ func (s *Server) GetMe(c *gin.Context) {
 // UpdateProfile - обновить профиль пользователя
 func (s *Server) UpdateProfile(c *gin.Context) {
 	var req struct {
-		Name        string   `json:"name"`
-		Skills      []string `json:"skills"`
-		Bio         string   `json:"bio"`
-		AvatarURL   string   `json:"avatarUrl"`
-		LookingFor  []string `json:"lookingFor"`
-		Experience  string   `json:"experience"`
-		ContactInfo string   `json:"contactInfo"`
-		Tags        []string `json:"tags"`
-		Pts         *int     `json:"pts"`
-		Mmr         *int     `json:"mmr"`
+		Name           string   `json:"name"`
+		Skills         []string `json:"skills"`
+		VerifiedSkills []string `json:"verifiedSkills"`
+		Bio            string   `json:"bio"`
+		AvatarURL      string   `json:"avatarUrl"`
+		LookingFor     []string `json:"lookingFor"`
+		Experience     string   `json:"experience"`
+		ContactInfo    string   `json:"contactInfo"`
+		Tags           []string `json:"tags"`
+		Pts            *int     `json:"pts"`
+		Mmr            *int     `json:"mmr"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -578,6 +580,9 @@ func (s *Server) UpdateProfile(c *gin.Context) {
 	}
 	if req.Skills != nil {
 		updates["skills"] = pq.StringArray(req.Skills)
+	}
+	if req.VerifiedSkills != nil {
+		updates["verified_skills"] = pq.StringArray(req.VerifiedSkills)
 	}
 	if req.Bio != "" {
 		updates["bio"] = req.Bio
@@ -621,6 +626,7 @@ func (s *Server) UpdateProfile(c *gin.Context) {
 		"id":              user.ID,
 		"name":            user.Name,
 		"skills":          user.Skills,
+		"verifiedSkills":  user.VerifiedSkills,
 		"bio":             user.Bio,
 		"avatarUrl":       user.AvatarURL,
 		"lookingFor":      user.LookingFor,
@@ -649,15 +655,16 @@ func (s *Server) GetUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":          user.ID,
-		"name":        user.Name,
-		"username":    user.Username,
-		"skills":      user.Skills,
-		"bio":         user.Bio,
-		"experience":  user.Experience,
-		"lookingFor":  user.LookingFor,
-		"tags":        user.Tags,
-		"skillRating": user.SkillRating,
+		"id":             user.ID,
+		"name":           user.Name,
+		"username":       user.Username,
+		"skills":         user.Skills,
+		"verifiedSkills": user.VerifiedSkills,
+		"bio":            user.Bio,
+		"experience":     user.Experience,
+		"lookingFor":     user.LookingFor,
+		"tags":           user.Tags,
+		"skillRating":    user.SkillRating,
 	})
 }
 

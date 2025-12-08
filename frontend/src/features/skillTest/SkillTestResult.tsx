@@ -63,9 +63,9 @@ export function SkillTestResult({
   };
 
   return (
-    <div className="fixed inset-0 bg-base-100 z-50 flex flex-col">
+    <div className="fixed inset-0 bg-base-100 z-50 flex flex-col overflow-y-auto">
       {/* Header */}
-      <div className={`py-8 px-4 ${isPassed ? 'bg-success/20' : 'bg-error/20'}`}>
+      <div className={`py-8 px-4 shrink-0 ${isPassed ? 'bg-success/20' : 'bg-error/20'}`}>
         <div className="max-w-md mx-auto text-center">
           {/* Result icon */}
           <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
@@ -91,7 +91,7 @@ export function SkillTestResult({
       </div>
       
       {/* Score card */}
-      <div className="px-4 -mt-6">
+      <div className="px-4 -mt-6 shrink-0">
         <div className="card bg-base-100 shadow-xl max-w-md mx-auto">
           <div className="card-body">
             {/* Score circle */}
@@ -182,7 +182,7 @@ export function SkillTestResult({
       </div>
       
       {/* Actions */}
-      <div className="flex-1 flex flex-col justify-end p-4 max-w-md mx-auto w-full">
+      <div className="flex-1 flex flex-col justify-end p-4 pb-24 max-w-md mx-auto w-full">
         <div className="space-y-3">
           <button
             onClick={onViewAnswers}
