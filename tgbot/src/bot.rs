@@ -4,6 +4,7 @@ use rand::{thread_rng, Rng};
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 use teloxide::utils::command::BotCommands;
+use teloxide::utils::markdown::escape;
 
 use crate::redis_client;
 
@@ -50,16 +51,26 @@ pub async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> 
                     return Ok(());
                 }
             };
+            let username_raw = msg
+                .from()
+                .and_then(|u| u.username.clone())
+                .unwrap_or_else(|| "-".into());
 
-            bot.send_message(msg.chat.id, format!("Ваш токен: `{}`", token))
+            let username = escape(&username_raw);
+            let token_md = escape(&token);
+
+            let text = format!(
+                "Привет, {}\n\
+                 Ваш токен: `{}`\n\
+                 Данный токен истекает через 10 минут\n\
+                 Используйте этот токен для авторизации на сайте",
+                username,
+                token_md,
+            );
+
+            bot.send_message(msg.chat.id, text)
                 .parse_mode(ParseMode::MarkdownV2)
                 .await?;
-
-            bot.send_message(
-                msg.chat.id,
-                "Используйте этот токен для авторизации на сайте",
-            )
-            .await?;
         }
     }
 
@@ -72,6 +83,9 @@ pub async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> 
 /// - Key: generated token
 /// - Value: "tg_id;tg_username;hh:mm"
 /// - Expiration: 600 seconds (10 minutes)
+
+
+
 async fn generate_unique_token(msg: &Message) -> anyhow::Result<String>{
     use ::redis::AsyncCommands;
     let mut redis_conn = redis_client::create_redis_conn().await?;
