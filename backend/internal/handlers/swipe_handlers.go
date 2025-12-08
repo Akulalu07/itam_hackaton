@@ -5,6 +5,7 @@ import (
 	"backend/internal/middleware"
 	"backend/internal/models"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -393,6 +394,38 @@ func (s *Server) SwipeReal(c *gin.Context) {
 		return
 	}
 
+	// If user is captain and action is "like", automatically send invite
+	var inviteSent bool
+	var inviteID int64
+	if req.Action == "like" && team.ID != 0 && team.CaptainID == userID {
+		// Check if target user is not already in a team for this hackathon
+		inTeam, _, _ := isUserInTeamForHackathon(req.TargetUserID, team.HackathonID)
+		if !inTeam {
+			// Check if invite already exists
+			var existingInvite models.TeamInvite
+			err := database.DB.Where("team_id = ? AND invited_user_id = ? AND status = ?", team.ID, req.TargetUserID, "pending").First(&existingInvite).Error
+			if err != nil {
+				// No existing invite, create one
+				invite := models.TeamInvite{
+					TeamID:        team.ID,
+					InvitedUserID: req.TargetUserID,
+					InviterID:     userID,
+					Status:        "pending",
+				}
+				if err := database.DB.Create(&invite).Error; err == nil {
+					inviteSent = true
+					inviteID = invite.ID
+					log.Printf("[SwipeReal] Auto-created invite ID=%d for user %d to team %d", invite.ID, req.TargetUserID, team.ID)
+					
+					// Send notification to target user
+					var targetUser models.User
+					database.DB.First(&targetUser, req.TargetUserID)
+					go s.sendTeamInviteNotification(team, currentUser, targetUser, invite.ID)
+				}
+			}
+		}
+	}
+
 	// If "like", check for mutual match
 	isMatch := false
 	var matchedUserInfo *models.User
@@ -463,9 +496,14 @@ func (s *Server) SwipeReal(c *gin.Context) {
 	}
 
 	response := gin.H{
-		"success": true,
-		"action":  req.Action,
-		"match":   isMatch,
+		"success":    true,
+		"action":     req.Action,
+		"match":      isMatch,
+		"inviteSent": inviteSent,
+	}
+
+	if inviteSent {
+		response["inviteId"] = inviteID
 	}
 
 	if matchedUserInfo != nil {
