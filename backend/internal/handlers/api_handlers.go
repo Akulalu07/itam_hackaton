@@ -4,6 +4,7 @@ import (
 	"backend/internal/database"
 	"backend/internal/middleware"
 	"backend/internal/models"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -296,6 +297,28 @@ func (s *Server) SendInvite(c *gin.Context) {
 		return
 	}
 
+	// Check if target user is already in a team for this hackathon
+	inTeam, _, err := isUserInTeamForHackathon(toUserID, team.HackathonID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check user team status"})
+		return
+	}
+	if inTeam {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user is already in a team for this hackathon"})
+		return
+	}
+
+	// Check team capacity
+	hasCapacity, currentCount, maxSize, err := checkTeamCapacity(teamID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check team capacity"})
+		return
+	}
+	if !hasCapacity {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is full", "current": currentCount, "max": maxSize})
+		return
+	}
+
 	// Check if invite already exists
 	var existingInvite models.TeamInvite
 	if err := database.DB.Where("team_id = ? AND invited_user_id = ? AND status = ?", teamID, toUserID, "pending").First(&existingInvite).Error; err == nil {
@@ -366,25 +389,98 @@ func (s *Server) AcceptInvite(c *gin.Context) {
 		return
 	}
 
+	// Check if team is open
+	if team.Status == models.TeamStatusClosed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is not accepting new members"})
+		return
+	}
+
+	// Check if user already in a team for this hackathon
+	inTeam, _, err := isUserInTeamForHackathon(userID, team.HackathonID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check user team status"})
+		return
+	}
+	if inTeam {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you are already in a team for this hackathon"})
+		return
+	}
+
+	// Check team capacity
+	hasCapacity, currentCount, maxSize, err := checkTeamCapacity(team.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check team capacity"})
+		return
+	}
+	if !hasCapacity {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is full", "current": currentCount, "max": maxSize})
+		return
+	}
+
+	// Get user for notification
+	var user models.User
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
+		return
+	}
+
+	// Используем транзакцию для атомарности операций
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	// Add user to team
-	if err := database.DB.Model(&models.User{}).Where("id = ?", userID).Update("team_id", team.ID).Error; err != nil {
+	if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("team_id", team.ID).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to join team"})
 		return
 	}
 
 	// Update invite status
-	database.DB.Model(&invite).Update("status", "accepted")
+	if err := tx.Model(&invite).Update("status", "accepted").Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update invite status"})
+		return
+	}
 
 	// Update hackathon participant status if exists
-	database.DB.Model(&models.HackathonParticipant{}).
+	if err := tx.Model(&models.HackathonParticipant{}).
 		Where("user_id = ? AND hackathon_id = ?", userID, team.HackathonID).
-		Update("status", "in_team")
+		Update("status", "in_team").Error; err != nil {
+		// Не критично, если запись не найдена
+		log.Printf("Warning: failed to update hackathon participant status: %v", err)
+	}
+
+	// Cancel other pending invites for this user for this hackathon
+	if err := tx.Model(&models.TeamInvite{}).
+		Where("invited_user_id = ? AND status = 'pending' AND team_id IN (SELECT id FROM teams WHERE hackathon_id = ?)", userID, team.HackathonID).
+		Update("status", "cancelled").Error; err != nil {
+		log.Printf("Warning: failed to cancel pending invites: %v", err)
+	}
+
+	// Cancel other pending join requests for this user for this hackathon
+	var otherTeams []models.Team
+	if err := tx.Where("hackathon_id = ?", team.HackathonID).Find(&otherTeams).Error; err == nil {
+		for _, t := range otherTeams {
+			if err := tx.Model(&models.TeamJoinRequest{}).
+				Where("team_id = ? AND user_id = ? AND status = 'pending'", t.ID, userID).
+				Update("status", "cancelled").Error; err != nil {
+				log.Printf("Warning: failed to cancel join request for team %d: %v", t.ID, err)
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
+		return
+	}
 
 	// Notify inviter
 	var inviter models.User
 	database.DB.First(&inviter, invite.InviterID)
-	var user models.User
-	database.DB.First(&user, userID)
 
 	go s.sendInviteResponseNotification(team, user, inviter, true)
 
@@ -421,15 +517,24 @@ func (s *Server) DeclineInvite(c *gin.Context) {
 	}
 
 	// Update invite status
-	database.DB.Model(&invite).Update("status", "declined")
+	if err := database.DB.Model(&invite).Update("status", "declined").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update invite status"})
+		return
+	}
 
 	// Notify inviter
 	var team models.Team
 	var inviter models.User
 	var user models.User
-	database.DB.First(&team, invite.TeamID)
-	database.DB.First(&inviter, invite.InviterID)
-	database.DB.First(&user, userID)
+	if err := database.DB.First(&team, invite.TeamID).Error; err != nil {
+		log.Printf("Warning: failed to get team for notification: %v", err)
+	}
+	if err := database.DB.First(&inviter, invite.InviterID).Error; err != nil {
+		log.Printf("Warning: failed to get inviter for notification: %v", err)
+	}
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		log.Printf("Warning: failed to get user for notification: %v", err)
+	}
 
 	go s.sendInviteResponseNotification(team, user, inviter, false)
 
@@ -520,19 +625,87 @@ func (s *Server) BotAcceptInvite(c *gin.Context) {
 		return
 	}
 
+	// Check if team is open
+	if team.Status == models.TeamStatusClosed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is not accepting new members"})
+		return
+	}
+
+	// Check if user already in a team for this hackathon
+	inTeam, _, err := isUserInTeamForHackathon(user.ID, team.HackathonID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check user team status"})
+		return
+	}
+	if inTeam {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you are already in a team for this hackathon"})
+		return
+	}
+
+	// Check team capacity
+	hasCapacity, currentCount, maxSize, err := checkTeamCapacity(team.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check team capacity"})
+		return
+	}
+	if !hasCapacity {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is full", "current": currentCount, "max": maxSize})
+		return
+	}
+
+	// Используем транзакцию для атомарности операций
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	// Add user to team
-	if err := database.DB.Model(&models.User{}).Where("id = ?", user.ID).Update("team_id", team.ID).Error; err != nil {
+	if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Update("team_id", team.ID).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to join team"})
 		return
 	}
 
 	// Update invite status
-	database.DB.Model(&invite).Update("status", "accepted")
+	if err := tx.Model(&invite).Update("status", "accepted").Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update invite status"})
+		return
+	}
 
 	// Update hackathon participant status if exists
-	database.DB.Model(&models.HackathonParticipant{}).
+	if err := tx.Model(&models.HackathonParticipant{}).
 		Where("user_id = ? AND hackathon_id = ?", user.ID, team.HackathonID).
-		Update("status", "in_team")
+		Update("status", "in_team").Error; err != nil {
+		// Не критично, если запись не найдена
+		log.Printf("Warning: failed to update hackathon participant status: %v", err)
+	}
+
+	// Cancel other pending invites for this user for this hackathon
+	if err := tx.Model(&models.TeamInvite{}).
+		Where("invited_user_id = ? AND status = 'pending' AND team_id IN (SELECT id FROM teams WHERE hackathon_id = ?)", user.ID, team.HackathonID).
+		Update("status", "cancelled").Error; err != nil {
+		log.Printf("Warning: failed to cancel pending invites: %v", err)
+	}
+
+	// Cancel other pending join requests for this user for this hackathon
+	var otherTeams []models.Team
+	if err := tx.Where("hackathon_id = ?", team.HackathonID).Find(&otherTeams).Error; err == nil {
+		for _, t := range otherTeams {
+			if err := tx.Model(&models.TeamJoinRequest{}).
+				Where("team_id = ? AND user_id = ? AND status = 'pending'", t.ID, user.ID).
+				Update("status", "cancelled").Error; err != nil {
+				log.Printf("Warning: failed to cancel join request for team %d: %v", t.ID, err)
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
+		return
+	}
 
 	// Notify inviter
 	var inviter models.User
@@ -586,13 +759,20 @@ func (s *Server) BotDeclineInvite(c *gin.Context) {
 	}
 
 	// Update invite status
-	database.DB.Model(&invite).Update("status", "declined")
+	if err := database.DB.Model(&invite).Update("status", "declined").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update invite status"})
+		return
+	}
 
 	// Notify inviter
 	var team models.Team
 	var inviter models.User
-	database.DB.First(&team, invite.TeamID)
-	database.DB.First(&inviter, invite.InviterID)
+	if err := database.DB.First(&team, invite.TeamID).Error; err != nil {
+		log.Printf("Warning: failed to get team for notification: %v", err)
+	}
+	if err := database.DB.First(&inviter, invite.InviterID).Error; err != nil {
+		log.Printf("Warning: failed to get inviter for notification: %v", err)
+	}
 
 	go s.sendInviteResponseNotification(team, user, inviter, false)
 

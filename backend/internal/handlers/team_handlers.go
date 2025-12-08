@@ -6,12 +6,92 @@ import (
 	"backend/internal/models"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+// getTeamMemberCount - получить количество участников команды (включая капитана)
+func getTeamMemberCount(teamID int64) (int, error) {
+	var count int64
+	err := database.DB.Model(&models.User{}).Where("team_id = ?", teamID).Count(&count).Error
+	if err != nil {
+		return 0, err
+	}
+
+	// Проверяем, есть ли капитан в команде по team_id
+	var team models.Team
+	if err := database.DB.First(&team, teamID).Error; err != nil {
+		return 0, err
+	}
+
+	// Если капитан не в team_id, добавляем его к счету
+	var captain models.User
+	if err := database.DB.First(&captain, team.CaptainID).Error; err == nil {
+		if captain.TeamID == nil || *captain.TeamID != teamID {
+			count++
+		}
+	}
+
+	return int(count), nil
+}
+
+// isUserInTeamForHackathon - проверить, находится ли пользователь в команде для данного хакатона
+func isUserInTeamForHackathon(userID int64, hackathonID int64) (bool, *models.Team, error) {
+	var user models.User
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil, nil
+		}
+		return false, nil, err
+	}
+
+	// Проверяем team_id пользователя
+	if user.TeamID != nil {
+		var team models.Team
+		if err := database.DB.First(&team, *user.TeamID).Error; err == nil {
+			if team.HackathonID == hackathonID {
+				return true, &team, nil
+			}
+		}
+	}
+
+	// Проверяем, является ли пользователь капитаном команды для этого хакатона
+	var captainTeam models.Team
+	if err := database.DB.Where("captain_id = ? AND hackathon_id = ?", userID, hackathonID).First(&captainTeam).Error; err == nil {
+		return true, &captainTeam, nil
+	}
+
+	return false, nil, nil
+}
+
+// checkTeamCapacity - проверить, есть ли место в команде
+func checkTeamCapacity(teamID int64) (bool, int, int, error) {
+	var team models.Team
+	if err := database.DB.First(&team, teamID).Error; err != nil {
+		return false, 0, 0, err
+	}
+
+	var hackathon models.Hackathon
+	if err := database.DB.First(&hackathon, team.HackathonID).Error; err != nil {
+		return false, 0, 0, err
+	}
+
+	memberCount, err := getTeamMemberCount(teamID)
+	if err != nil {
+		return false, 0, 0, err
+	}
+
+	return memberCount < hackathon.TeamSize, memberCount, hackathon.TeamSize, nil
+}
 
 // ============================================
 // TEAM HANDLERS
@@ -148,12 +228,29 @@ func (s *Server) CreateTeamReal(c *gin.Context) {
 
 	userID, _ := middleware.GetUserID(c)
 
-	// Check if user already has a team for this hackathon
+	// Check if user already has a team for this hackathon (as captain)
 	var existingTeam models.Team
 	err := database.DB.Where("captain_id = ? AND hackathon_id = ?", userID, req.HackathonID).First(&existingTeam).Error
 	if err == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "you already have a team for this hackathon"})
 		return
+	}
+
+	// Check if user is already a member of another team for this hackathon
+	var user models.User
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
+		return
+	}
+
+	if user.TeamID != nil {
+		var existingMemberTeam models.Team
+		if err := database.DB.First(&existingMemberTeam, *user.TeamID).Error; err == nil {
+			if existingMemberTeam.HackathonID == req.HackathonID {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "you are already in a team for this hackathon"})
+				return
+			}
+		}
 	}
 
 	// Generate invite code
@@ -176,13 +273,33 @@ func (s *Server) CreateTeamReal(c *gin.Context) {
 		return
 	}
 
+	// Используем транзакцию для атомарности операций
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	// Update user's team_id
-	database.DB.Model(&models.User{}).Where("id = ?", userID).Update("team_id", team.ID)
+	if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("team_id", team.ID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user team"})
+		return
+	}
 
 	// Update hackathon participant status
-	database.DB.Model(&models.HackathonParticipant{}).
+	if err := tx.Model(&models.HackathonParticipant{}).
 		Where("user_id = ? AND hackathon_id = ?", userID, req.HackathonID).
-		Update("status", "in_team")
+		Update("status", "in_team").Error; err != nil {
+		// Если запись не найдена, это не критично - пользователь может быть не зарегистрирован
+		log.Printf("Warning: failed to update hackathon participant status: %v", err)
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
+		return
+	}
 
 	c.JSON(http.StatusCreated, team)
 }
@@ -459,26 +576,74 @@ func (s *Server) JoinTeamByCodeReal(c *gin.Context) {
 		return
 	}
 
-	// Check team size
-	var memberCount int64
-	database.DB.Model(&models.User{}).Where("team_id = ?", team.ID).Count(&memberCount)
-
-	// Get hackathon to check max team size
-	var hackathon models.Hackathon
-	database.DB.First(&hackathon, team.HackathonID)
-
-	if int(memberCount) >= hackathon.TeamSize {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "team is full"})
+	// Check if user already in a team for this hackathon
+	inTeam, _, err := isUserInTeamForHackathon(userID, team.HackathonID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check user team status"})
+		return
+	}
+	if inTeam {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you are already in a team for this hackathon"})
 		return
 	}
 
+	// Check team capacity
+	hasCapacity, currentCount, maxSize, err := checkTeamCapacity(team.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check team capacity"})
+		return
+	}
+	if !hasCapacity {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is full", "current": currentCount, "max": maxSize})
+		return
+	}
+
+	// Используем транзакцию для атомарности операций
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	// Add user to team
-	database.DB.Model(&models.User{}).Where("id = ?", userID).Update("team_id", team.ID)
+	if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("team_id", team.ID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to join team"})
+		return
+	}
 
 	// Update hackathon participant status
-	database.DB.Model(&models.HackathonParticipant{}).
+	if err := tx.Model(&models.HackathonParticipant{}).
 		Where("user_id = ? AND hackathon_id = ?", userID, team.HackathonID).
-		Update("status", "in_team")
+		Update("status", "in_team").Error; err != nil {
+		// Не критично, если запись не найдена
+		log.Printf("Warning: failed to update hackathon participant status: %v", err)
+	}
+
+	// Cancel other pending invites for this user for this hackathon
+	if err := tx.Model(&models.TeamInvite{}).
+		Where("invited_user_id = ? AND status = 'pending' AND team_id IN (SELECT id FROM teams WHERE hackathon_id = ?)", userID, team.HackathonID).
+		Update("status", "cancelled").Error; err != nil {
+		log.Printf("Warning: failed to cancel pending invites: %v", err)
+	}
+
+	// Cancel other pending join requests for this user for this hackathon
+	var otherTeams []models.Team
+	if err := tx.Where("hackathon_id = ?", team.HackathonID).Find(&otherTeams).Error; err == nil {
+		for _, t := range otherTeams {
+			if err := tx.Model(&models.TeamJoinRequest{}).
+				Where("team_id = ? AND user_id = ? AND status = 'pending'", t.ID, userID).
+				Update("status", "cancelled").Error; err != nil {
+				log.Printf("Warning: failed to cancel join request for team %d: %v", t.ID, err)
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "joined team successfully",
@@ -576,15 +741,14 @@ func (s *Server) RequestJoinTeam(c *gin.Context) {
 		return
 	}
 
-	// Check team size
-	var memberCount int64
-	database.DB.Model(&models.User{}).Where("team_id = ?", team.ID).Count(&memberCount)
-
-	var hackathon models.Hackathon
-	database.DB.First(&hackathon, team.HackathonID)
-
-	if int(memberCount) >= hackathon.TeamSize {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "team is full"})
+	// Check team capacity
+	hasCapacity, currentCount, maxSize, err := checkTeamCapacity(teamID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check team capacity"})
+		return
+	}
+	if !hasCapacity {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team is full", "current": currentCount, "max": maxSize})
 		return
 	}
 
@@ -596,10 +760,20 @@ func (s *Server) RequestJoinTeam(c *gin.Context) {
 	}
 
 	// Check if user already in a team for this hackathon
+	inTeam, _, err := isUserInTeamForHackathon(userID, team.HackathonID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check user team status"})
+		return
+	}
+	if inTeam {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you are already in a team for this hackathon"})
+		return
+	}
+
+	// Get user for notification
 	var user models.User
-	database.DB.First(&user, userID)
-	if user.TeamID != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "you are already in a team"})
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
 		return
 	}
 
@@ -716,48 +890,93 @@ func (s *Server) HandleJoinRequest(c *gin.Context) {
 	database.DB.First(&requestingUser, joinRequest.UserID)
 
 	if req.Action == "accept" {
-		// Check team size
-		var memberCount int64
-		database.DB.Model(&models.User{}).Where("team_id = ?", team.ID).Count(&memberCount)
-
-		var hackathon models.Hackathon
-		database.DB.First(&hackathon, team.HackathonID)
-
-		if int(memberCount) >= hackathon.TeamSize {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "team is full"})
+		// Check if user already in a team for this hackathon
+		inTeam, _, err := isUserInTeamForHackathon(joinRequest.UserID, team.HackathonID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check user team status"})
+			return
+		}
+		if inTeam {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user is already in a team for this hackathon"})
 			return
 		}
 
+		// Check team capacity
+		hasCapacity, currentCount, maxSize, err := checkTeamCapacity(team.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check team capacity"})
+			return
+		}
+		if !hasCapacity {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "team is full", "current": currentCount, "max": maxSize})
+			return
+		}
+
+		// Используем транзакцию для атомарности операций
+		tx := database.DB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+
 		// Add user to team
-		database.DB.Model(&models.User{}).Where("id = ?", joinRequest.UserID).Update("team_id", team.ID)
+		if err := tx.Model(&models.User{}).Where("id = ?", joinRequest.UserID).Update("team_id", team.ID).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add user to team"})
+			return
+		}
 
 		// Update hackathon participant status
-		database.DB.Model(&models.HackathonParticipant{}).
+		if err := tx.Model(&models.HackathonParticipant{}).
 			Where("user_id = ? AND hackathon_id = ?", joinRequest.UserID, team.HackathonID).
-			Update("status", "in_team")
+			Update("status", "in_team").Error; err != nil {
+			// Не критично, если запись не найдена
+			log.Printf("Warning: failed to update hackathon participant status: %v", err)
+		}
 
 		joinRequest.Status = "accepted"
+		if err := tx.Save(&joinRequest).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update request status"})
+			return
+		}
+
+		// Cancel other pending invites for this user for this hackathon
+		if err := tx.Model(&models.TeamInvite{}).
+			Where("invited_user_id = ? AND status = 'pending' AND team_id IN (SELECT id FROM teams WHERE hackathon_id = ?)", joinRequest.UserID, team.HackathonID).
+			Update("status", "cancelled").Error; err != nil {
+			log.Printf("Warning: failed to cancel pending invites: %v", err)
+		}
+
+		// Cancel other pending join requests from this user for this hackathon
+		var otherTeams []models.Team
+		if err := tx.Where("hackathon_id = ?", team.HackathonID).Find(&otherTeams).Error; err == nil {
+			for _, t := range otherTeams {
+				if err := tx.Model(&models.TeamJoinRequest{}).
+					Where("team_id = ? AND user_id = ? AND status = 'pending'", t.ID, joinRequest.UserID).
+					Update("status", "cancelled").Error; err != nil {
+					log.Printf("Warning: failed to cancel join request for team %d: %v", t.ID, err)
+				}
+			}
+		}
+
+		if err := tx.Commit().Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit transaction"})
+			return
+		}
 
 		// Send acceptance notification
 		s.sendRequestResponseNotification(team, requestingUser, true)
 	} else {
 		joinRequest.Status = "rejected"
+		if err := database.DB.Save(&joinRequest).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update request status"})
+			return
+		}
 
 		// Send rejection notification
 		s.sendRequestResponseNotification(team, requestingUser, false)
-	}
-
-	database.DB.Save(&joinRequest)
-
-	// Reject other pending requests from this user for this hackathon
-	if req.Action == "accept" {
-		var otherTeams []models.Team
-		database.DB.Where("hackathon_id = ?", team.HackathonID).Find(&otherTeams)
-		for _, t := range otherTeams {
-			database.DB.Model(&models.TeamJoinRequest{}).
-				Where("team_id = ? AND user_id = ? AND status = 'pending'", t.ID, joinRequest.UserID).
-				Update("status", "cancelled")
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
