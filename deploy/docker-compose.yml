@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
 
   backend:
-    image: itam-backend:latest
+    image: ghcr.io/akulalu07/itam_hackaton-backend:latest 
     container_name: backend
     ports:
       - "8080:8080"
@@ -68,7 +68,7 @@ services:
         condition: service_healthy
 
   frontend:
-    image: itam-frontend:latest
+    image: ghcr.io/akulalu07/itam_hackaton-frontend:latest
     container_name: frontend
     ports:
       - "80:80"
